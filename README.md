@@ -17,31 +17,137 @@ Swift 6.2+, iOS 16+. The consuming app owns signing. The podspec source URL is
 reserved metadata for future publication; this library is currently local and
 has not been pushed or published.
 
-## UIKit
+## Dynamic UIKit containers
 
 ```swift
-import AnchoredOverlayKit
-
-// Keep one controller per editor, initialized before focusing the input.
-let overlay = AnchoredOverlayController()
-overlay.present(content: menuView, anchoredTo: plusButton,
-                preferredSize: CGSize(width: 280, height: 168),
+let overlay = AnchoredOverlayController() // retain before editing begins
+let compact = OverlayLayout(width: .fixed(280), height: .content(max: 360))
+let expanded = OverlayLayout.bottomEdge(inset: 12, height: .viewportFraction(0.6))
+overlay.present(content: contentView, anchoredTo: plusButton,
+                layout: compact,
+                appearance: OverlayAppearance(corners: .bottomConcentric(), background: .glass(.regular)),
                 dismissLabel: "Close menu")
-overlay.dismiss { /* present a picker from the original page */ }
+overlay.updateLayout(expanded) // same content instance, interruptible spring
+// After changing UIKit constraints, arranged subviews or intrinsic content:
+overlay.invalidateContentSize()
+overlay.dismiss { /* present a picker from the owning page */ }
 ```
 
-The library owns transient window placement, touch shields, anchored animation,
-source appearance, accessibility escape, reduced motion, and cleanup. Content
-styling, labels, menu actions, picker permissions, draft state and upload logic
-belong to the application. Geometry never contributes to composer measurement.
+Width resolves before height is measured. `.content(max:)` uses Auto Layout's
+compressed fitting height at that width; a custom UIView can implement
+`OverlayContentSizing.overlayHeight(forWidth:)`. Height must describe desired
+content, not the last allocated frame. Scroll views need an explicit/fractional
+height, or a bounded content view that supplies a meaningful natural height.
+The application owns scrolling when content exceeds the cap. `resolvedFrame`
+exposes the destination in source-window coordinates; `onLayout` delivers
+coalesced changes for RN/native measurement adapters. It does not fire per
+animation frame, and old presentations cannot deliver stale callbacks.
+
+`.viewportFraction` is a fraction of the **source window height**, then clamped
+to available safe/keyboard space. `.bottom(inset:)` adds clearance above the
+resolved bottom boundary (already safe-area aware); `.anchored` follows the
+trigger. These policies contain no menu-row counts or business page identities.
+
+The library owns the outer material, animated corner policy and clipping.
+Customize with `OverlayAppearance(cornerRadius:background:)`: `.material`,
+`.color`, or `.custom { UIView(...) }`. The custom view is a noninteractive
+background. Content owns its internal padding, typography and controls.
+`updateAppearance` can animate the radius alongside a layout change; background
+replacement itself is immediate. `.transparent` delegates all chrome to content.
+
+Bounds, position, radius and opacity follow critically damped springs. Retargeting
+preserves current values and velocities; `.immediate` snaps geometry. Content is
+laid out at the destination size and revealed through the animated clip, so text
+is never stretched and required-height rows aren't squeezed during opening.
+Visible and touch geometry use the same frame each tick. Reduce Motion snaps
+geometry and retains a fade. Layout changes do not dismiss or remount content.
+
+The original `preferredSize:` overload remains available, with transparent
+container chrome to preserve caller-styled menus.
+
+## Bottom-edge concentric panels and Liquid Glass
+
+```swift
+let expanded = OverlayLayout.bottomEdge(
+  inset: 12, height: .viewportFraction(0.6), maxWidth: 600
+)
+let appearance = OverlayAppearance(
+  corners: .bottomConcentric(top: 24, fallback: 24),
+  background: .glass(.regular)
+)
+// Alternatives:
+let tinted = OverlayAppearance(
+  corners: .bottomConcentric(),
+  background: .glass(.clear, tint: .systemBlue.withAlphaComponent(0.12), fallback: .systemMaterial)
+)
+```
+
+`bottomEdge` uses **window edges**, with equal horizontal and bottom spacing until
+`maxWidth` caps the width. Existing `.bottom(inset:)` retains its safe-area-based
+behavior. The background can extend into the bottom safe area; the package reduces
+the content allocation by the remaining Home Indicator clearance. Do not add that
+clearance a second time. For `.content(max:)`, the cap includes this clearance;
+fixed and fractional heights also describe the outer panel, not the content.
+
+On iOS 26+, `.bottomConcentric` resolves the two bottom corners independently with
+UIKit's public `containerConcentric` API in the **source window**. The keyboard
+hosting window is never the corner reference. With equal edge spacing and circular
+corners, the settled relationship is `innerRadius = max(0, outerRadius - inset)`;
+there is no device-model table or private screen-radius lookup. The top corners
+use `top`. Geometry is reevaluated during motion; a spring blends corner policies
+when switching between compact and expanded states, so intermediate transition
+frames intentionally interpolate toward concentricity. Content, backdrop and hit
+testing share the resolved radii. Small panels clamp radii to fit their bounds.
+
+Width-capped, unequal-edge, anchored, above-keyboard and pre-iOS-26 presentations
+use the explicit bottom `fallback`. Top corners still use `top`. These fallbacks
+do not claim device concentricity. Legacy `cornerRadius:` and its mutable property
+remain fixed-radius conveniences; reading the property on a concentric appearance
+returns the configured top radius, not the resolved device radius.
+
+`.glass(.regular)` and `.glass(.clear, tint: ...)` use native `UIGlassEffect` on
+iOS 26+, with noninteractive glass behind the separately hosted content. The
+container does not add glass effects to individual rows. On earlier systems,
+`fallback` selects a `UIBlurEffect.Style` (default `.systemMaterial`). Reapplying
+an identical built-in background preserves its effect view; switching material
+is immediate and does not remount content. `.material`, `.color` and `.custom`
+remain available. `standard` remains system material: glass is an explicit choice.
+
+The demo's **Glass:** button cycles regular, blue-tinted clear, system material,
+20pt edge spacing, and a 300pt width cap. Both UIKit and SwiftUI expose this flow.
 
 ## SwiftUI
 
-`OverlayMenuButton` bridges a native trigger and SwiftUI menu content through
-`UIHostingConfiguration`. It honors `.disabled` and tears down on dismantle.
-Use `.frame(width: 44, height: 44)` for the trigger. Keep the controller in `@State`
-and dismiss on the owning page's disappearance. See [INTEGRATION.md](INTEGRATION.md)
-for complete UIKit/LodyKit and SwiftUI/Ri Later recipes; neither app is modified.
+```swift
+@State private var overlay = AnchoredOverlayController()
+@State private var expanded = false
+
+var body: some View {
+  OverlayButton(controller: overlay,
+                layout: expanded ? expandedLayout : compactLayout,
+                accessibilityLabel: "Insert", dismissLabel: "Close menu") {
+    Image(systemName: "plus")
+  } content: {
+    MyContent(expanded: $expanded)
+  }
+  .frame(width: 44, height: 44)
+  .onDisappear { overlay.dismiss(animated: false) }
+}
+```
+
+`OverlayButton` accepts arbitrary label/content views. It updates the mounted
+content tree and layout when parent state changes, and automatically invalidates
+measurement when SwiftUI content changes its natural size. It honors `.disabled`
+and only tears down its **own** presentation when dismantled. Keep a stable view
+identity and controller; changing `.id` deliberately resets SwiftUI state.
+`OverlayMenuButton` remains a fixed-size icon convenience using the same adapter.
+
+Navigation paths, root/detail retention, loading, scroll position, business
+callbacks and shared-element transitions belong to the application. A hidden
+retained page must disable hit testing and accessibility. The library does not
+infer navigation from data updates or add a second navigation system. See
+[INTEGRATION.md](INTEGRATION.md) for Lody and Ri Later integration recipes.
+Neither consuming application is modified by this package.
 
 ## Compatibility boundary
 
@@ -72,6 +178,10 @@ ffmpeg/ffprobe for reviewing recordings. No login, cloud or consumer checkout.
 ```sh
 # Use the installed Xcode. Omit DEVELOPER_DIR when xcode-select is configured.
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer python3 scripts/verify.py
+# Dynamic resizing, content measurement, state/scroll retention and reversal:
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer python3 scripts/verify.py --scenario dynamic --output .artifacts/dynamic-acceptance
+# iOS 26+ glass, concentric geometry, edge spacing and safe content:
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer python3 scripts/verify.py --scenario glass --output .artifacts/glass-acceptance
 ```
 
 The runner leases a dedicated `AnchoredOverlayKit Verify` iPhone 17 Pro, selects
@@ -106,3 +216,7 @@ before comparison with window/view bounds. The example uses
 for its own composer layout; the library does not replace the app's layout guide.
 
 See [VALIDATION.md](VALIDATION.md) for the completed local Simulator run and its limits.
+
+SwiftUI natural-size observation uses Apple's
+[`onGeometryChange`](https://developer.apple.com/documentation/swiftui/view/ongeometrychange(for:of:action:)),
+with measurement updates deferred out of the layout transaction.

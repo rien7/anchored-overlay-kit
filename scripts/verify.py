@@ -236,12 +236,13 @@ def main():
     parser.add_argument('--udid')
     parser.add_argument('--runtime')
     parser.add_argument('--skip-build', action='store_true')
+    parser.add_argument('--scenario', choices=['baseline', 'dynamic', 'glass'], default='baseline')
     parser.add_argument('--host', choices=['chat', 'sheet'])
     parser.add_argument('--appearance', choices=['light', 'dark'])
     parser.add_argument('--output', type=Path, default=ROOT / '.artifacts/acceptance')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    plan = [{'id': host, 'title': host + ' host preserves editing and routes keyboard-overlay touches',
+    plan = [{'id': host, 'title': host + ' ' + args.scenario + ' container preserves editing and interaction',
              'requiredEvidence': ['screenshot', 'video']} for host in ['chat', 'sheet']]
     (args.output / 'plan.json').write_text(json.dumps(plan, indent=2))
     with lease(args.udid, args.runtime) as udid:
@@ -285,7 +286,14 @@ def main():
                                 raise RuntimeError('Recorder exited before start')
                     else:
                         raise RuntimeError('Recorder did not start')
-                    exercise(ui, host == 'sheet')
+                    if args.scenario == 'glass':
+                        from verify_glass import exercise as glass_exercise
+                        glass_exercise(ui, host == 'sheet')
+                    elif args.scenario == 'dynamic':
+                        from verify_dynamic import exercise as dynamic_exercise
+                        dynamic_exercise(ui, host == 'sheet')
+                    else:
+                        exercise(ui, host == 'sheet')
                     item['status'] = 'passed'
                 except Exception as error:
                     item['error'] = str(error)

@@ -9,10 +9,12 @@
 /* Begin PBXBuildFile section */
 		1ED531ADA6135C82D6EC2A9F /* AnchoredOverlayKit in Frameworks */ = {isa = PBXBuildFile; productRef = C3335E5EEC3A3C5DEEFD5CF4 /* AnchoredOverlayKit */; };
 		6D25AA1580F0C14BADAA3FE2 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A0B1D47A876320B4B859A234 /* Foundation.framework */; };
+		6ED62AC995877DD94A1C9D49 /* DynamicDemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECBFFA29695E008CC2AC2AD /* DynamicDemo.swift */; };
 		8334E41A37BED6CA03BE4FB3 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = D711CFDCE00022C9ECFB1324 /* App.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0ECBFFA29695E008CC2AC2AD /* DynamicDemo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DynamicDemo.swift; sourceTree = "<group>"; };
 		A0B1D47A876320B4B859A234 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		A23BCF76FD2AF34EA123842D /* OverlayDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OverlayDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D711CFDCE00022C9ECFB1324 /* App.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -43,6 +45,7 @@
 			isa = PBXGroup;
 			children = (
 				D711CFDCE00022C9ECFB1324 /* App.swift */,
+				0ECBFFA29695E008CC2AC2AD /* DynamicDemo.swift */,
 			);
 			name = OverlayDemo;
 			path = OverlayDemo;
@@ -144,6 +147,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8334E41A37BED6CA03BE4FB3 /* App.swift in Sources */,
+				6ED62AC995877DD94A1C9D49 /* DynamicDemo.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -33,6 +33,7 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
   private var keepsAboveKeyboard = false
   private var calls = 0
   private var swiftUIHost: UIHostingController<AnyView>?
+  private var dynamicHost: UIHostingController<AnyView>?
   private let sheet: Bool
 
   init(sheet: Bool = false) { self.sheet = sheet; super.init(nibName: nil, bundle: nil) }
@@ -103,6 +104,9 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
     plus.accessibilityLabel = "Attachments"
     plus.accessibilityIdentifier = identifier("demo-plus")
     plus.accessibilityValue = "closed"
+    overlay.onLayout = { [weak self] rect in
+      self?.status.accessibilityValue = "Panel \(Int(rect.width.rounded())) × \(Int(rect.height.rounded()))"
+    }
     overlay.onDismiss = { [weak self] in self?.plus.accessibilityValue = "closed" }
     plus.addAction(UIAction { [weak self] _ in self?.toggleMenu() }, for: .touchUpInside)
     let composer = UIStackView(arrangedSubviews: [plus, input])
@@ -148,6 +152,26 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
       host.view.widthAnchor.constraint(equalToConstant: 44),
       host.view.heightAnchor.constraint(equalToConstant: 44),
     ])
+    let dynamic = UIHostingController(rootView: AnyView(DynamicDemo(controller: overlay,
+      label: sheet ? "Sheet dynamic SwiftUI" : "Dynamic SwiftUI")))
+    dynamicHost = dynamic
+    addChild(dynamic)
+    dynamic.view.backgroundColor = .clear
+    dynamic.view.translatesAutoresizingMaskIntoConstraints = false
+    dynamic.view.heightAnchor.constraint(equalToConstant: 44).isActive = true
+    controls.addArrangedSubview(dynamic.view)
+    dynamic.didMove(toParent: self)
+    let dynamicUIKit = UIButton(type: .system)
+    dynamicUIKit.setTitle("Dynamic UIKit", for: .normal)
+    dynamicUIKit.accessibilityIdentifier = identifier("demo-dynamic-uikit")
+    dynamicUIKit.heightAnchor.constraint(equalToConstant: 44).isActive = true
+    dynamicUIKit.addAction(UIAction { [weak self, weak dynamicUIKit] _ in
+      guard let self, let button = dynamicUIKit else { return }
+      let content = DynamicUIKitContent(overlay: self.overlay)
+      self.overlay.present(content: content, anchoredTo: button, layout: content.layout, appearance: OverlayAppearance(background: .glass(.regular)), dismissLabel: "Close dynamic menu",
+                           allowsKeyboardOverlap: !self.keepsAboveKeyboard)
+    }, for: .touchUpInside)
+    controls.addArrangedSubview(dynamicUIKit)
     let swiftLabel = UILabel()
     swiftLabel.text = "SwiftUI trigger + content"
     swiftLabel.font = .preferredFont(forTextStyle: .subheadline)

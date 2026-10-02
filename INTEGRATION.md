@@ -115,3 +115,45 @@ These are integration directions only; this package does not change either app.
   delegate presentation to this library. Existing `UIHostingConfiguration`
   content can be supplied directly, or the trigger can use `OverlayMenuButton`.
   Multi-page content should fit or scroll within the requested panel size.
+
+## Migrating Ri Later's expanding container
+
+Keep `ReferenceMenuState` (including navigation identity, root/detail retention,
+selection snapshots and RN content release callbacks) in Ri Later. Extract the
+**inner content** from `ReferenceMenuSurface`: the package now owns the outer
+position, frame, clipping, radius and material. Do not keep its existing
+`scaleEffect`, outer frame/position or glass wrapper around the supplied content,
+or two independent layout/animation systems will compete.
+
+Map compact levels to `.fixed(280)` width and `.content(max:)` height. Map the
+reference browser to `.bottomEdge(inset: 12, height: .viewportFraction(0.6))`
+with `.bottomConcentric(top: 24, fallback: 24)` corners and `.glass(.regular)`
+background. This keeps background edges equidistant from the window; the library
+reserves bottom Home Indicator clearance inside the panel. Remove the old outer
+safe-area spacer to avoid double padding. `.bottom(inset: 0)` remains available
+when the entire panel should sit above the safe-area boundary. Feed the active policy to `OverlayButton`, or
+call `updateLayout` on the UIKit controller without presenting again.
+
+`OverlayButton` preserves the hosted SwiftUI identity across state updates.
+Retain the root scroll view in the app's content tree while showing details;
+use page IDs only for actual navigation, not query loading. Retain a hidden
+scroll view's viewport as well as its identity: shrinking it to zero can normalize
+its offset. The standalone `RetainedReferenceList` demonstrates this app-owned
+policy. Keep outgoing pages
+until the app's **content transition** completes; the container's resize has no
+business-page release event. In particular, `onDismiss` means the whole overlay
+has been removed, never "the expanded panel shrank".
+
+UIKit content uses constraints or `OverlayContentSizing` plus
+`invalidateContentSize()`. SwiftUI content invalidates automatically. RN content
+still reports its size through the existing consuming native module; that module
+can invalidate the content measurement. Use `onLayout` to receive the resolved rectangle in source-window coordinates,
+then send its width (minus app-owned content padding) to the RN measurer.
+`resolvedFrame` also exposes the latest destination synchronously. Width must be
+determined before RN text measurement. Do not derive the desired height from the clipped outer frame.
+
+Use `OverlayAppearance` for the shared shell. Apps may provide a custom,
+noninteractive background view. Prefer `.glass` for system Liquid Glass; the
+package owns its version-gated material fallback.
+The package owns its frame/clipping; labels and content styling remain app-owned.
+The default material works from iOS 16 and does not claim Liquid Glass parity.

@@ -34,3 +34,27 @@ Driver notes:
   Verify continued editing with a physical software-keyboard key, not AX text injection.
 - After picker return, wait for keyboard geometry to settle before tapping plus;
   assert action count remains four through repeated dismissals and background return.
+
+Dynamic containers:
+- Run `python3 scripts/verify.py --scenario dynamic --output .artifacts/dynamic-acceptance`
+  for UIKit fitting, SwiftUI natural-height invalidation, expand/return, retained
+  child state and scroll offset, and rapid transition reversal in both hosts/themes.
+- Compare `scroll-before.json` / `scroll-after.json`; an existing SwiftUI node
+  alone does not prove its scroll viewport or offset survived.
+- SwiftUI measurements come from `onGeometryChange` at the resolved width.
+  Fitting a hosting view at its old allocation can report a stale height.
+- The sample preserves a hidden list's nonzero viewport in application code;
+  the package owns container layout, not business-page caching or navigation.
+
+
+Concentric glass containers:
+- Run `python3 scripts/verify.py --scenario glass --output .artifacts/glass-acceptance`
+  on iOS 26+ for actual rendered corner radii, 12pt/20pt edge gaps, width-cap and
+  above-keyboard fallback, Home Indicator clearance, regular/clear/blur changes,
+  rounded-corner dismissal and continued editing in both hosts/themes.
+- Demo-only `dynamic-geometry` reads actual panel geometry/effective radii/effect
+  class and an independent full-window reference. `geometry.json` records values;
+  assertions compare inner radius with outer radius minus inset, not configured
+  values. The library exposes no test-only API or forced system-version switch.
+- Preserve identical glass backgrounds during parent SwiftUI updates. Recreating
+  an effect view can restart its appearance even though the content identity stays.

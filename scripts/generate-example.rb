@@ -3,7 +3,9 @@ root = File.expand_path('..', __dir__)
 project = Xcodeproj::Project.new(File.join(root, 'Examples/OverlayDemo.xcodeproj'))
 target = project.new_target(:application, 'OverlayDemo', :ios, '16.0')
 group = project.main_group.new_group('OverlayDemo', 'OverlayDemo')
-target.source_build_phase.add_file_reference(group.new_file('App.swift'))
+Dir.glob(File.join(root, 'Examples/OverlayDemo/*.swift')).sort.each do |path|
+  target.source_build_phase.add_file_reference(group.new_file(File.basename(path)))
+end
 package = project.new(Xcodeproj::Project::Object::XCLocalSwiftPackageReference)
 package.relative_path = '..'
 project.root_object.package_references << package
