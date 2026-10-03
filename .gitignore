@@ -5,3 +5,5 @@
 .acceptances/
 __pycache__/
 xcuserdata/
+node_modules/
+*.tgz

@@ -2,21 +2,71 @@
 
 ## UIKit / LodyKit
 
-Use the local package in Xcode, or declare the local CocoaPod in the application
-Podfile and the dependency in the consuming module's podspec:
+Install the npm package as a direct dependency of the consuming app workspace.
+For local testing, use the tarball produced by `npm pack` instead of a registry
+version. All examples below resolve from the app, so pnpm's nested installation
+layout does not need to be hard-coded.
+
+### CocoaPods
+
+Inside the application target in its Podfile:
 
 ```ruby
-# App Podfile
-pod 'AnchoredOverlayKit', :path => File.expand_path(
-  ENV.fetch('ANCHORED_OVERLAY_KIT_PATH', '~/Developer/anchored-overlay-kit')
-)
-# LodyKit.podspec (consumer declaration)
-s.dependency 'AnchoredOverlayKit', '0.1.0'
+package_json = Pod::Executable.execute_command('node', [
+  '-p', 'require.resolve("@rien7/anchored-overlay-kit/package.json", { paths: [process.argv[1]] })',
+  __dir__
+]).strip
+pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-For Expo, persist the Podfile declaration through a local config plugin. Keep
-the existing native-module boundary: no new Expo bridge package is necessary.
-Do not store a developer-specific absolute checkout path in application source.
+The consuming native module's podspec must also declare its dependency:
+
+```ruby
+s.dependency 'AnchoredOverlayKit', '~> 0.1.0'
+```
+
+Run `pod install` and rebuild the application. Do not add the same library through
+both SPM and CocoaPods in one target.
+
+### Expo prebuild
+
+Install `expo-build-properties` using `npx expo install expo-build-properties`.
+Merge this entry into the app's existing plugin configuration in `app.config.js`:
+
+```js
+const path = require('node:path');
+const overlayPath = path.dirname(
+  require.resolve('@rien7/anchored-overlay-kit/package.json')
+);
+
+module.exports = {
+  expo: {
+    plugins: [
+      ['expo-build-properties', {
+        ios: {
+          extraPods: [{ name: 'AnchoredOverlayKit', path: overlayPath }],
+        },
+      }],
+    ],
+  },
+};
+```
+
+Resolve this path during config evaluation on each build machine; do not commit
+an expanded absolute path. Preserve existing plugins and extraPods entries.
+Run `npx expo prebuild --platform ios`, then rebuild the development/native app.
+Keep the dependency declaration in the consuming module's podspec as above.
+No new Expo bridge, React Native autolinking registration, or JavaScript import
+is supplied by this core package. Expo Go is not supported.
+
+The persistent configuration uses the official
+[extraPods option](https://docs.expo.dev/versions/latest/sdk/build-properties/#extraiospoddependency).
+
+### Local Swift checkout
+
+For native-only development, use a local Swift Package or replace the npm path
+in the Podfile with your checkout path. Product source should not contain a
+developer-specific absolute checkout path.
 
 ```swift
 import AnchoredOverlayKit
@@ -46,6 +96,20 @@ Menus return typed business actions defined by the consumer. Photo/file pickers,
 permission prompts, uploads, focus restoration after those pickers, and draft
 ownership remain in the app. Existing chat/sheet keyboard-avoidance layouts do
 not need to change: overlay geometry never enters composer measurement.
+
+For system permission requests, first call `dismissWithResult` and proceed only
+on `.dismissed`. Keep the pending operation in the editor owner, not in overlay
+content: scene deactivation cancels presentations and releases retained pages.
+After the system completion and source-scene reactivation, validate that the
+original owner/anchor is still visible, read the current permission status and
+present fresh content. Invalidate that pending operation on navigation/teardown;
+never reopen an obsolete editor. Settings handoffs must also wait for the app to
+return, because `UIApplication.open` completion only confirms that Settings opened.
+
+The package reconciles restored keyboard ownership from the source root view's
+keyboard layout guide and an unambiguous local first responder. It also repairs
+host sibling order while an active overlay is mounted. Consumers do not need a
+timer, a forced keyboard hide/show cycle, or a raised window level.
 
 ## SwiftUI / Ri Later
 

@@ -262,6 +262,17 @@ public enum OverlayDismissalResult: Equatable, Sendable {
         refresh()
       }
     }
+    // UIKit may reinsert keyboard content into the same host after system UI.
+    // Geometry and window identity can remain unchanged, so ordering must be
+    // checked independently of geometry invalidation.
+    if !closing, UIApplication.shared.applicationState == .active,
+       source?.windowScene?.activationState == .foregroundActive,
+       placement == .overKeyboard, let view = surface,
+       let destination = view.superview, destination.subviews.last !== view {
+      // The remote keyboard window can ignore bringSubviewToFront. Adding an
+      // existing child to the same parent reorders it without unmounting it.
+      destination.addSubview(view)
+    }
     guard surface != nil, motion.count == 10, target.count == 10 else { return }
     if zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
       lastTick = link.timestamp

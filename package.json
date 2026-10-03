@@ -1,0 +1,32 @@
+{
+  "name": "@rien7/anchored-overlay-kit",
+  "version": "0.1.1",
+  "description": "Native iOS anchored overlays with keyboard-aware placement and retained content transitions.",
+  "license": "AGPL-3.0-only",
+  "author": "rien7",
+  "homepage": "https://github.com/rien7/anchored-overlay-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rien7/anchored-overlay-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rien7/anchored-overlay-kit/issues"
+  },
+  "files": [
+    "Sources/AnchoredOverlayKit/**/*.swift",
+    "AnchoredOverlayKit.podspec",
+    "Package.swift",
+    "INTEGRATION.md",
+    "PUBLISHING.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "verify:distribution": "python3 scripts/verify-distribution.py"
+  }
+}

@@ -19,6 +19,22 @@ import UIKit
       failures = []
       let originalAlpha = anchor.alpha
       controller.anchorTransition = .fade
+      // Exercise real frame delivery before synthetic scene notifications below.
+      let content = UILabel()
+      controller.present(content: content, anchoredTo: anchor, layout: compact, dismissLabel: "Close")
+      if let host = content.window, host !== anchor.window,
+         let surface = host.subviews.first(where: { content.isDescendant(of: $0) }) {
+        let insertedKeyboardContent = UIView(frame: host.bounds)
+        insertedKeyboardContent.isUserInteractionEnabled = false
+        host.addSubview(insertedKeyboardContent)
+        check(host.subviews.last === insertedKeyboardContent, "host-reordering-precondition")
+        for _ in 0..<20 where host.subviews.last !== surface {
+          try? await Task.sleep(for: .milliseconds(100))
+        }
+        check(host.subviews.last === surface, "host-reordering-recovery")
+        insertedKeyboardContent.removeFromSuperview()
+      } else { check(false, "host-reordering-missing-host") }
+      controller.dismiss(animated: false)
       let missing = UIView()
       check(pages.present(page("missing"), anchoredTo: missing, dismissLabel: "Close") == .anchorUnavailable, "missing-result")
       check(pages.pageID == nil && !controller.isPresented, "missing-state")
@@ -94,6 +110,18 @@ import UIKit
         check(controller.placementState?.fallbackReason == .ambiguousKeyboardHost, "ambiguous-host-fallback")
         controller.dismiss(animated: false)
         ambiguousHost.isHidden = true
+      }
+      // A permission interruption can return without a keyboard frame change.
+      // Invalidate the old attribution while retaining the real editing session.
+      if let scene = anchor.window?.windowScene {
+        pages.present(page("before-interruption"), anchoredTo: anchor, dismissLabel: "Close")
+        check(controller.placement == .overKeyboard, "interruption-precondition")
+        NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: scene)
+        check(!controller.isPresented, "interruption-dismissal")
+        NotificationCenter.default.post(name: UIScene.didActivateNotification, object: scene)
+        pages.present(page("after-interruption"), anchoredTo: anchor, dismissLabel: "Close")
+        check(controller.placement == .overKeyboard, "interruption-keyboard-recovery-\(controller.placementState?.fallbackReason?.rawValue ?? "none")")
+        controller.dismiss(animated: false)
       }
       let message = failures.isEmpty ? "Lifecycle passed" : "Failed: " + failures.joined(separator: ",")
       report(message)

@@ -110,3 +110,11 @@ Coordinated content motion:
 - Every scenario waits for the software keyboard before AXe text injection and
   checks the initial draft immediately. A malformed injected draft must fail at
   setup, not be diagnosed later as an overlay action leaking into the keyboard.
+
+Distribution checks:
+- Run `npm run verify:distribution` from the repository checkout. It packs and
+  installs the real tarball, checks the allowlist and byte equality, and compiles
+  normally signed CocoaPods and SPM hosts from node_modules. It does not publish.
+- Evidence is in `.artifacts/distribution`: pack.json, podspec.json, build logs
+  and result.json. Packaging-only changes use these CLI checks; native behavior
+  changes still require the simulator scenarios above.

@@ -1,21 +1,37 @@
 # AnchoredOverlayKit
 
-A local, iOS-only UIKit/SwiftUI library for anchored menus and transient content
+An iOS-only UIKit/SwiftUI library for anchored menus and transient content
 that can cover the keyboard while preserving editor focus. No Expo, React Native,
 application models, network service, or third-party package dependency.
 
 ## Install
 
-Open `Examples/OverlayDemo.xcodeproj` to run the standalone demo. Consumers can add
-this directory as a local Swift Package or use the CocoaPod:
+Swift 6.2+ (Xcode 26+), iOS 16+. The consuming app owns signing.
 
-```ruby
-pod 'AnchoredOverlayKit', :path => File.expand_path('~/Developer/anchored-overlay-kit')
+### npm / React Native / Expo
+
+The distribution name is `@rien7/anchored-overlay-kit`. It contains native Swift
+source, not a JavaScript component or an Expo module:
+
+```sh
+pnpm add @rien7/anchored-overlay-kit
 ```
 
-Swift 6.2+, iOS 16+. The consuming app owns signing. The podspec source URL is
-reserved metadata for future publication; this library is currently local and
-has not been pushed or published.
+Then link its CocoaPod from the installed package; see [Integration](INTEGRATION.md)
+for Podfile and persistent Expo configuration. Installing with pnpm alone does not
+link native code. Rebuild the native app; Expo Go cannot load this library.
+
+### Swift Package Manager
+
+Add this directory as a local Swift Package. After the repository and a version
+are published, use `https://github.com/rien7/anchored-overlay-kit.git` with the
+matching semantic version tag (for example `0.1.0`).
+
+Open `Examples/OverlayDemo.xcodeproj` to run the standalone demo.
+See [Publishing](PUBLISHING.md) for tarball verification and release steps.
+The npm package is published. Remote Swift Package Manager installation requires
+a published Git repository and a matching version tag; this checkout currently
+uses local Swift Package Manager integration.
 
 ## Dynamic UIKit containers
 

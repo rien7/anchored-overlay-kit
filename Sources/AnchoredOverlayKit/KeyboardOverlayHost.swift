@@ -30,6 +30,9 @@ public struct OverlayPlacementState: Equatable, Sendable {
     center.addObserver(self, selector: #selector(windowChanged), name: UIWindow.didBecomeVisibleNotification, object: nil)
     center.addObserver(self, selector: #selector(windowChanged), name: UIWindow.didBecomeHiddenNotification, object: nil)
     center.addObserver(self, selector: #selector(keyboardChanged), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+    center.addObserver(self, selector: #selector(keyboardChanged), name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
+    center.addObserver(self, selector: #selector(windowChanged), name: UIScene.didActivateNotification, object: nil)
+    center.addObserver(self, selector: #selector(windowChanged), name: UIApplication.didBecomeActiveNotification, object: nil)
     center.addObserver(self, selector: #selector(keyboardHidden), name: UIResponder.keyboardDidHideNotification, object: nil)
     center.addObserver(self, selector: #selector(windowChanged), name: UIScreen.didConnectNotification, object: nil)
     center.addObserver(self, selector: #selector(windowChanged), name: UIScreen.didDisconnectNotification, object: nil)
@@ -43,9 +46,15 @@ public struct OverlayPlacementState: Equatable, Sendable {
   }
   private func register(_ window: UIWindow) {
     if String(describing: type(of: window)).contains("UIRemoteKeyboardWindow") { windows.add(window) }
+    else {
+      // Install the guide before an interruption; creating it only after a
+      // missing notification leaves its first layout without keyboard geometry.
+      _ = window.rootViewController?.viewIfLoaded?.keyboardLayoutGuide
+    }
   }
   @objc private func windowChanged(_ notification: Notification) {
     if let window = notification.object as? UIWindow { register(window) }
+    for window in applicationWindows { register(window) }
     revision &+= 1
   }
   @objc private func keyboardChanged(_ notification: Notification) {
@@ -87,7 +96,12 @@ public struct OverlayPlacementState: Equatable, Sendable {
     }
     // A late-created controller or ambiguous notification must still avoid the
     // keyboard. The layout guide belongs to this window, never another scene.
-    let local = source.keyboardLayoutGuide.layoutFrame.intersection(source.bounds)
+    return layoutGuideFrame(in: source)
+  }
+
+  private func layoutGuideFrame(in source: UIWindow) -> CGRect? {
+    guard let root = source.rootViewController?.viewIfLoaded else { return nil }
+    let local = root.convert(root.keyboardLayoutGuide.layoutFrame, to: source).intersection(source.bounds)
     guard !local.isNull, !local.isEmpty,
           local.minY < source.bounds.maxY - source.safeAreaInsets.bottom - 1 else { return nil }
     return local
@@ -95,7 +109,21 @@ public struct OverlayPlacementState: Equatable, Sendable {
 
   func destination(for source: UIWindow) -> (window: UIWindow?, reason: OverlayFallbackReason?) {
     guard source.containsFirstResponder else { return (nil, .sourceNotEditing) }
-    guard activeSource === source else { return (nil, .unattributedKeyboard) }
+    // System permission UI can invalidate notification attribution without
+    // changing the restored keyboard's frame. Reconcile from current, local
+    // evidence; never transfer a cached rectangle between windows or scenes.
+    for window in applicationWindows { register(window) }
+    if activeSource !== source {
+      let editors = applicationWindows.filter {
+        !windows.contains($0) && !$0.isHidden &&
+        $0.windowScene?.activationState == .foregroundActive && $0.containsFirstResponder
+      }
+      guard editors.count == 1, editors.first === source,
+            let local = layoutGuideFrame(in: source) else { return (nil, .unattributedKeyboard) }
+      activeSource = source
+      keyboards.setObject(KeyboardState(
+        frame: source.convert(local, to: source.screen.coordinateSpace), screen: source.screen), forKey: source)
+    }
     let rect = source.convert(source.bounds, to: source.screen.coordinateSpace)
     let visible = windows.allObjects.filter { !$0.isHidden && $0.alpha > 0 && $0.frame.contains(rect) }
     let candidates = visible.filter { sameDisplay($0.screen, source.screen) }
