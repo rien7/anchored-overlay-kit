@@ -16,7 +16,8 @@ public extension OverlayContentSafeArea {
 
 /// Driven by the controller's geometry clock, never a second UIView animation.
 @MainActor protocol OverlayContentTransition: AnyObject {
-  func overlayTransition(progress: CGFloat, visibleSize: CGSize, reducingMotion: Bool)
+  var overlayTransitionActive: Bool { get }
+  func overlayTransition(elapsed: CGFloat, visibleSize: CGSize, safeAreaInsets: UIEdgeInsets, reducingMotion: Bool)
 }
 
 func overlayBlend(_ value: CGFloat, from start: CGFloat, to end: CGFloat) -> CGFloat {

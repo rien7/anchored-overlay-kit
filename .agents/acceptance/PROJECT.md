@@ -94,9 +94,13 @@ Lifecycle and reactive pages:
   the Sheet entry; recording readiness does not imply app UI readiness.
 
 Coordinated content motion:
-- Pages now use the controller's display-link clock for scale/opacity; material
-  changes have a separate progress channel on that clock so they cannot restart
-  an in-flight page transition. Capture transition video, not just settled frames.
+- Pages share the controller's display-link clock for geometry and retained visibility
+  springs. Bodies never scale: stable allocations are clipped, viewport bodies fill
+  the live panel, and optional chrome tracks live bounds. Reversal changes targets
+  without resetting position, visibility or velocity. Capture transition video.
+- Reliability samples real surface identity, stable/viewport bounds, fixed 44pt
+  controls and live bottom clearance, including rapid reversals and same-size
+  page changes. Material changes retain a separate channel on the same clock.
 - The Recent Photos fixture fills the panel. Its Back and All Photos / Add N
   buttons float at the bottom; compare the `photos-grid` top with the menu top,
   not the Back button. Selection order is exposed as each tile's accessibility

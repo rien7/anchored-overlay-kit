@@ -49,7 +49,9 @@ import UIKit
   }
 }
 
-@MainActor private final class PhotoGrid: UIView, OverlayContentSafeArea {
+@MainActor private final class PhotoGrid: UIView, OverlayContentSafeArea, OverlayPageChrome {
+  let overlayChrome = UIView()
+  private var controlBottom: NSLayoutConstraint!
   private let scroll = UIScrollView()
   private let grid = UIView()
   private let back = UIButton(type: .system)
@@ -78,7 +80,18 @@ import UIKit
     scroll.contentInsetAdjustmentBehavior = .never
     scroll.accessibilityIdentifier = "photos-grid"
     scroll.addSubview(grid)
-    addSubview(scroll); addSubview(back); addSubview(done)
+    addSubview(scroll)
+    overlayChrome.addSubview(back); overlayChrome.addSubview(done)
+    back.translatesAutoresizingMaskIntoConstraints = false
+    done.translatesAutoresizingMaskIntoConstraints = false
+    controlBottom = back.bottomAnchor.constraint(equalTo: overlayChrome.bottomAnchor, constant: -12)
+    NSLayoutConstraint.activate([
+      back.leadingAnchor.constraint(equalTo: overlayChrome.leadingAnchor, constant: 12),
+      back.widthAnchor.constraint(equalToConstant: 44), back.heightAnchor.constraint(equalToConstant: 44),
+      controlBottom, done.centerYAnchor.constraint(equalTo: back.centerYAnchor),
+      done.trailingAnchor.constraint(equalTo: overlayChrome.trailingAnchor, constant: -12),
+      done.widthAnchor.constraint(greaterThanOrEqualToConstant: 100), done.heightAnchor.constraint(equalToConstant: 44)
+    ])
     for index in 0..<32 {
       let tile = UIButton(type: .custom)
       if let path = Bundle.main.path(forResource: "photo-\(ids[index % ids.count])", ofType: "jpg", inDirectory: "Photos") {
@@ -140,15 +153,12 @@ import UIKit
   func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
     guard bottomInset != insets.bottom else { return }
     bottomInset = insets.bottom
+    controlBottom.constant = -12 - bottomInset
     setNeedsLayout()
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    let controlY = max(12, bounds.height - bottomInset - 56)
-    back.frame = CGRect(x: 12, y: controlY, width: 44, height: 44)
-    let buttonWidth = max(100, done.sizeThatFits(CGSize(width: bounds.width - 80, height: 44)).width)
-    done.frame = CGRect(x: bounds.width - 12 - buttonWidth, y: controlY, width: buttonWidth, height: 44)
     scroll.frame = bounds
     scroll.contentInset.bottom = bottomInset + 68
     scroll.verticalScrollIndicatorInsets.bottom = bottomInset + 68

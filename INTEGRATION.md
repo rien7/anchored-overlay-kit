@@ -237,3 +237,54 @@ or camera capture. Views are released when the overlay is dismissed.
 Use `.expandingToBottom(inset: 12)` for a grid that grows down from the menu's
 current resolved top. Pair with `.bottomConcentric()` for matching bottom corners.
 The controller still clamps to the actual window/keyboard-host constraints.
+
+Resource-heavy UIKit pages can conform to `OverlayPageActivity`. The selected
+page receives `overlayPageActivityDidChange(isActive: true)` after successful
+presentation or when pushed/restored. It receives `false` when another page is
+selected or the presentation is removed (including cancellation). A retained
+hidden page is inactive: stop camera sessions, playback and subscriptions there.
+The content factory itself is not an activation event. Permission continuations
+must remain with the app's presentation owner because dismissal releases pages.
+
+The overlay retains a UIKit controller for its own surface. This preserves the
+responder chain when content is hosted over the keyboard, so controls such as
+`UIButton` with a native `UIMenu` can find a presentation owner. Its view can
+move between windows, so it is not parented to the anchor's app controller.
+The library releases that controller on dismissal/cancellation.
+
+### Closing into a destination
+
+After your app accepts an item, use `controller.dismiss(to:representation:cornerRadius:completion:)`
+to close the current panel into a mounted destination UIView. Supply a detached
+representation (for example, an aspect-fill UIImageView). Its bounds follow the
+panel; normal page lifecycle and dismissal cancellation semantics still apply.
+Commit business state before this call, and restore any temporarily hidden
+destination in completion for every result, including cancellation. A nil or
+offscreen destination and Reduce Motion use an in-place fade. Target and source
+must belong to the same window scene. The destination is weakly held and tracked
+through layout changes until completion; removal switches to a fade. This API
+does not own media or attachment state.
+
+### Continuous page containers
+
+`OverlayPages` retains one panel, mask and material through push/back. The panel's
+geometry and page visibility share the display-link clock. Retargeting preserves
+current positions and velocities; page bodies are never scaled.
+
+- `OverlayPage(contentLayout: .stable)` (default) allocates content at the final
+  page size and clips it through the moving panel. Use for menus, text and grids;
+  outgoing allocations and retained scroll offsets survive back navigation.
+- `OverlayPage(contentLayout: .viewport)` lays out the body at the current visible
+  panel size on every frame. Use for camera/video previews that must fill it.
+- A content view may conform to `OverlayPageChrome` and return a retained
+  `overlayChrome: UIView`. The library mounts this separately above the body and
+  sizes it to the live viewport. Anchor fixed-size controls to this view; do not
+  constrain it to the body. Blank chrome space passes touches through to content.
+- `OverlayContentSafeArea` receives the current visible bottom clearance each
+  frame, including keyboard/layout changes. Apply that inset inside the chrome
+  to keep controls clear of the Home Indicator. The library owns the outer mask.
+
+Controls fade out before body replacement and appear after incoming content.
+Outgoing and incoming bodies use disjoint opacity ranges to avoid ghosted menus.
+Reduced Motion settles spatial geometry and retains only the opacity transition.
+Business state and resource lifetime remain governed by `OverlayPageActivity`.

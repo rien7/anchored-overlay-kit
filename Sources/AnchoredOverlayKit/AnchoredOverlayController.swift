@@ -31,6 +31,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   private weak var anchor: UIView?
   private weak var source: UIWindow?
   private var surface: OverlaySurface?
+  private var contentController: UIViewController?
   private var shield: UIControl?
   private var layout = OverlayLayout(width: .fixed(280), height: .fixed(168))
   private var appearance = OverlayAppearance.standard
@@ -50,6 +51,9 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   private var finishingGeneration = 0
   private var displayLink: CADisplayLink?
   private var closing = false
+  private weak var closingDestination: UIView?
+  private var followsClosingDestination = false
+  private var closingCornerRadius: CGFloat = 8
   private var generation = 0
   private let host = KeyboardOverlayHost.shared
 
@@ -64,7 +68,9 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     restoreAnchor()
     cornerReference.removeFromSuperview()
     surface?.removeFromSuperview()
+    contentController = nil
     shield?.removeFromSuperview()
+    (surface?.content as? OverlayPresentationLifecycle)?.overlayDidDismiss()
     NotificationCenter.default.removeObserver(self)
     for completion in closeCompletions { completion(.cancelled) }
   }
@@ -100,6 +106,14 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     let view = OverlaySurface(content: content, appearance: appearance, dismissLabel: dismissLabel) { [weak self] in self?.dismiss() }
     view.allowsKeyboardOverlap = allowsKeyboardOverlap
     surface = view
+    // Content can move into the keyboard window without losing its controller
+    // responder chain. UIKit menus need an owning controller to present. Do not
+    // parent this to the app controller: its view may be in a different window,
+    // which violates UIKit containment. The overlay owns this window-local root.
+    let controller = UIViewController()
+    controller.definesPresentationContext = true
+    controller.view = view
+    contentController = controller
     refresh()
     guard surface === view else { return .unavailable }
     let origin = anchor.convert(anchor.bounds, to: window)
@@ -135,7 +149,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     if let allowsKeyboardOverlap { surface?.allowsKeyboardOverlap = allowsKeyboardOverlap }
     if !self.appearance.background.matches(appearance.background) {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
-      if motion.count == 10 { motion[9] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
+      if motion.count == 9 { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
     self.appearance = appearance
     measurementDirty = true
@@ -146,12 +160,6 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     guard surface != nil, !closing else { return }
     measurementDirty = true
     requestRefresh(transition: transition)
-  }
-
-  func beginPageTransition(_ transition: OverlayTransition) {
-    guard motion.count == 10, !closing else { return }
-    motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0)
-    refreshNeeded = true
   }
 
   private func restoreAnchor() {
@@ -172,7 +180,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     guard surface != nil, !closing else { return }
     if !self.appearance.background.matches(appearance.background) {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
-      if motion.count == 10 { motion[9] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
+      if motion.count == 9 { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
     self.appearance = appearance
     requestRefresh(transition: transition)
@@ -189,6 +197,47 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   public func dismissWithResult(animated: Bool = true,
                                 completion: @escaping (OverlayDismissalResult) -> Void) {
     dismissWithResult(animated: animated, reason: .dismissed, completion: completion)
+  }
+
+  /// Closes into a caller-owned destination using a transient visual representation.
+  /// The representation must be detached and lay itself out within its bounds.
+  /// Business state must already belong to the caller before starting this transition.
+  /// Follows destination layout changes until completion. Missing/offscreen
+  /// destinations and Reduce Motion use an in-place fade.
+  /// Completion follows the same cancellation/replacement rules as dismissWithResult.
+  public func dismiss(to destination: UIView?, representation: UIView, cornerRadius: CGFloat = 8,
+                      completion: @escaping (OverlayDismissalResult) -> Void) {
+    guard let view = surface, !closing else {
+      dismissWithResult(animated: true, completion: completion)
+      return
+    }
+    view.panel.setClosingRepresentation(representation)
+    view.isUserInteractionEnabled = false
+    // Enter the standard close lifecycle first; only its geometry destination differs.
+    dismissWithResult(animated: true, completion: completion)
+    guard closing, motion.count == 9 else { return }
+    closingDestination = destination
+    closingCornerRadius = max(0, cornerRadius)
+    followsClosingDestination = true
+    updateClosingDestination()
+  }
+
+  private func updateClosingDestination() {
+    guard followsClosingDestination else { return }
+    if !UIAccessibility.isReduceMotionEnabled, let destination = closingDestination, let source,
+       destination.window?.windowScene === source.windowScene, !destination.isHidden,
+       destination.bounds.width > 0, destination.bounds.height > 0 {
+      let rect = destination.convert(destination.bounds, to: source)
+      if source.bounds.contains(rect), rect.width.isFinite, rect.height.isFinite {
+        target = values(rect, radius: closingCornerRadius, alpha: 1)
+        return
+      }
+    }
+    // Once the target disappears, finish fading without resurrecting the transition.
+    followsClosingDestination = false
+    closingDestination = nil
+    target = motion.map(\.value)
+    target[5] = 0
   }
 
   /// Owner teardown cancels pending actions and immediately removes both shields.
@@ -222,11 +271,14 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     let completions = closeCompletions
     let result = dismissalResult
     let previousAnchor = anchor
+    let removedSurface = surface
+    let removedController = contentController
+    let dismissed = onDismiss
     displayLink?.invalidate()
     displayLink = nil
     cornerReference.removeFromSuperview()
-    (surface?.content as? OverlayPresentationLifecycle)?.overlayDidDismiss()
     surface?.removeFromSuperview()
+    contentController = nil
     shield?.removeFromSuperview()
     restoreAnchor()
     surface = nil; shield = nil; anchor = nil; source = nil; placement = nil; placementState = nil
@@ -236,7 +288,13 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     resolvedFrame = nil
     motion = []; target = []
     closing = false
-    onDismiss?()
+    closingDestination = nil
+    followsClosingDestination = false
+    // Client lifecycle callbacks may present a replacement. Finish clearing the
+    // old presentation first so it cannot remove or mutate the new surface.
+    removedController?.presentedViewController?.dismiss(animated: false)
+    (removedSurface?.content as? OverlayPresentationLifecycle)?.overlayDidDismiss()
+    dismissed?()
     if generation == current {
       UIAccessibility.post(notification: .screenChanged, argument: previousAnchor)
     }
@@ -245,12 +303,12 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   }
 
   private func values(_ rect: CGRect, radius: CGFloat, alpha: CGFloat, concentric: CGFloat = 0, bottomRadius: CGFloat? = nil) -> [CGFloat] {
-    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius, 1, 1]
+    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius, 1]
   }
 
   private func settleGeometry(includingContent: Bool = true) {
-    guard motion.count == 10, target.count == 10 else { return }
-    for index in motion.indices where index != 5 && (includingContent || (index != 8 && index != 9)) { motion[index] = OverlaySpring(value: target[index]) }
+    guard motion.count == 9, target.count == 9 else { return }
+    for index in motion.indices where index != 5 && (includingContent || index != 8) { motion[index] = OverlaySpring(value: target[index]) }
     applyMotion()
   }
 
@@ -267,14 +325,18 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     // checked independently of geometry invalidation.
     if !closing, UIApplication.shared.applicationState == .active,
        source?.windowScene?.activationState == .foregroundActive,
+       // UIKit presentations owned by the surface (e.g. UIMenu) must stay above it.
+       contentController?.presentedViewController == nil,
        placement == .overKeyboard, let view = surface,
        let destination = view.superview, destination.subviews.last !== view {
       // The remote keyboard window can ignore bringSubviewToFront. Adding an
       // existing child to the same parent reorders it without unmounting it.
       destination.addSubview(view)
     }
-    guard surface != nil, motion.count == 10, target.count == 10 else { return }
-    if zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
+    guard surface != nil, motion.count == 9, target.count == 9 else { return }
+    if closing { updateClosingDestination() }
+    let contentMoving = (surface?.content as? OverlayContentTransition)?.overlayTransitionActive == true
+    if !contentMoving && zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
       lastTick = link.timestamp
       if closing { finishDismiss() }
       return
@@ -283,12 +345,12 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     lastTick = link.timestamp
     if UIAccessibility.isReduceMotionEnabled && !closing { settleGeometry(includingContent: false) }
     for index in motion.indices { motion[index].advance(to: target[index], elapsed: elapsed) }
-    applyMotion()
+    applyMotion(elapsed: elapsed)
     if closing && zip(motion, target).allSatisfy({ $0.value == $1 }) { finishDismiss() }
   }
 
-  private func applyMotion() {
-    guard let view = surface, motion.count == 10 else { return }
+  private func applyMotion(elapsed: CGFloat = 0) {
+    guard let view = surface, motion.count == 9 else { return }
     let rect = CGRect(x: motion[0].value, y: motion[1].value,
                       width: max(0, motion[2].value), height: max(0, motion[3].value))
     // No Core Animation geometry interpolation: visible and hit-test bounds are
@@ -306,8 +368,13 @@ public enum OverlayDismissalResult: Equatable, Sendable {
       let presence = min(1, max(0, motion[5].value))
       view.panel.alpha = overlayBlend(presence, from: 0, to: 0.18)
       view.panel.layoutIfNeeded()
-      view.panel.renderContent(presence: presence, progress: motion[8].value,
-                               backgroundProgress: motion[9].value,
+      var clearance: CGFloat = 0
+      if let source {
+        clearance = min(rect.height, max(0, rect.maxY - (source.bounds.maxY - source.safeAreaInsets.bottom)))
+      }
+      view.panel.renderContent(presence: presence, elapsed: elapsed,
+                               safeAreaInsets: UIEdgeInsets(top: 0, left: 0, bottom: clearance, right: 0),
+                               backgroundProgress: motion[8].value,
                                reducingMotion: UIAccessibility.isReduceMotionEnabled)
       if let anchorAlpha {
         anchor?.alpha = anchorAlpha * (1 - overlayBlend(presence, from: 0, to: 0.25))
@@ -557,6 +624,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
 @MainActor private final class OverlayPanel: UIView {
   private let content: UIView
   private let contentContainer = UIView()
+  private var closingRepresentation: UIView?
   var contentSize: CGSize = .zero {
     didSet { if oldValue != contentSize { setNeedsLayout() } }
   }
@@ -629,9 +697,23 @@ public enum OverlayDismissalResult: Equatable, Sendable {
       layer.mask = shapeMask
     }
   }
+  func setClosingRepresentation(_ representation: UIView) {
+    closingRepresentation?.removeFromSuperview()
+    closingRepresentation = representation
+    representation.isUserInteractionEnabled = false
+    addSubview(representation)
+    representation.frame = bounds
+    representation.alpha = 0
+    UIView.animate(withDuration: 0.12) {
+      representation.alpha = 1
+    } completion: { [weak self] _ in
+      self?.contentContainer.isHidden = true
+    }
+  }
   override func layoutSubviews() {
     super.layoutSubviews()
     backdrop?.frame = bounds
+    closingRepresentation?.frame = bounds
     for entry in fadingBackdrops { entry.view.frame = bounds }
     setRadii(radii)
     // Fixed destination allocation preserves fitting, text wrapping and scroll
@@ -640,7 +722,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     contentContainer.layer.position = .zero
     content.frame = CGRect(origin: .zero, size: contentSize)
   }
-  func renderContent(presence: CGFloat, progress: CGFloat, backgroundProgress: CGFloat, reducingMotion: Bool) {
+  func renderContent(presence: CGFloat, elapsed: CGFloat, safeAreaInsets: UIEdgeInsets, backgroundProgress: CGFloat, reducingMotion: Bool) {
     content.layoutIfNeeded()
     if !fadingBackdrops.isEmpty {
       let blend = overlayBlend(backgroundProgress, from: 0, to: 1)
@@ -654,7 +736,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     contentContainer.alpha = overlayBlend(presence, from: 0.12, to: 0.65)
     if let pages = content as? OverlayContentTransition {
       contentContainer.transform = .identity
-      pages.overlayTransition(progress: progress, visibleSize: bounds.size, reducingMotion: reducingMotion)
+      pages.overlayTransition(elapsed: elapsed, visibleSize: bounds.size, safeAreaInsets: safeAreaInsets, reducingMotion: reducingMotion)
     } else {
       var scale: CGFloat = 1
       if !reducingMotion, contentSize.width > 0, contentSize.height > 0 {

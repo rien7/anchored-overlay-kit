@@ -123,6 +123,102 @@ import UIKit
         check(controller.placement == .overKeyboard, "interruption-keyboard-recovery-\(controller.placementState?.fallbackReason?.rawValue ?? "none")")
         controller.dismiss(animated: false)
       }
+      let activity = ActivityProbe()
+      activity.changed = { [weak controller] active in
+        if active { controller?.cancel() }
+      }
+      pages.present(page("activity-root"), anchoredTo: anchor, dismissLabel: "Close")
+      pages.push(OverlayPage(id: "activity-cancel", layout: compact) { activity })
+      check(activity.events == [true, false], "activity-cancel-balanced")
+      check(pages.pageID == nil && !controller.isPresented, "activity-cancel-state")
+      let departure = ActivityProbe()
+      departure.changed = { [weak self, weak anchor] active in
+        guard !active, let self, let anchor else { return }
+        self.pages.present(self.page("activity-winner"), anchoredTo: anchor, dismissLabel: "Close")
+      }
+      pages.present(OverlayPage(id: "activity-departure", layout: compact) { departure }, anchoredTo: anchor, dismissLabel: "Close")
+      controller.dismiss(animated: false)
+      check(departure.events == [true, false], "activity-departure-balanced")
+      check(pages.pageID == "activity-winner" && controller.isPresented, "activity-departure-replacement")
+      controller.cancel()
+      // Destination transitions share normal cleanup, including cancellation and replacement.
+      for hasDestination in [true, false] {
+        pages.present(page("destination"), anchoredTo: anchor, dismissLabel: "Close")
+        try? await Task.sleep(for: .milliseconds(500))
+        let representation = UIView()
+        representation.backgroundColor = .systemBlue
+        var destinationResults: [OverlayDismissalResult] = []
+        controller.dismiss(to: hasDestination ? anchor : nil, representation: representation) {
+          destinationResults.append($0)
+        }
+        try? await Task.sleep(for: .milliseconds(1000))
+        check(destinationResults == [.dismissed], "destination-result")
+        check(!controller.isPresented && pages.pageID == nil, "destination-cleanup")
+        check(representation.window == nil, "destination-representation-released")
+      }
+      if let window = anchor.window {
+        let destination = UIView(frame: CGRect(x: 20, y: 140, width: 40, height: 40))
+        window.addSubview(destination)
+        pages.present(page("destination-moving"), anchoredTo: anchor, dismissLabel: "Close")
+        try? await Task.sleep(for: .milliseconds(500))
+        let visual = UIView()
+        var movingResult: OverlayDismissalResult?
+        controller.dismiss(to: destination, representation: visual) { movingResult = $0 }
+        try? await Task.sleep(for: .milliseconds(100))
+        destination.frame.origin = CGPoint(x: 200, y: 240)
+        try? await Task.sleep(for: .milliseconds(250))
+        let frame = visual.convert(visual.bounds, to: window)
+        check(abs(frame.minX - 200) < 15 && abs(frame.minY - 240) < 15, "destination-tracks-layout")
+        destination.removeFromSuperview()
+        try? await Task.sleep(for: .milliseconds(1000))
+        check(movingResult == .dismissed && !controller.isPresented, "destination-removed-fades")
+      }
+      pages.present(page("destination-cancel"), anchoredTo: anchor, dismissLabel: "Close")
+      var destinationCancelled: [OverlayDismissalResult] = []
+      controller.dismiss(to: anchor, representation: UIView()) { destinationCancelled.append($0) }
+      controller.cancel()
+      check(destinationCancelled == [.cancelled], "destination-cancel-once")
+      pages.present(page("destination-replace"), anchoredTo: anchor, dismissLabel: "Close")
+      var destinationReplaced: [OverlayDismissalResult] = []
+      controller.dismiss(to: anchor, representation: UIView()) { destinationReplaced.append($0) }
+      pages.present(page("destination-winner"), anchoredTo: anchor, dismissLabel: "Close")
+      check(destinationReplaced == [.superseded] && pages.pageID == "destination-winner", "destination-replacement")
+      controller.cancel()
+      // Sample actual mounted geometry through forward and interrupted return.
+      let stable = ContinuousProbe()
+      let viewport = ContinuousProbe()
+      pages.present(OverlayPage(id: "continuous-root", layout: compact) { stable },
+                    anchoredTo: anchor, dismissLabel: "Close")
+      try? await Task.sleep(for: .milliseconds(600))
+      let panel = stable.superview?.superview?.superview?.superview
+      let rootSize = stable.bounds.size
+      let expandedPage = OverlayPage(id: "continuous-media", layout: .expandingToBottom(inset: 12),
+                                    contentLayout: .viewport) { viewport }
+      pages.push(expandedPage)
+      for sample in 0..<45 {
+        try? await Task.sleep(for: .milliseconds(16))
+        check(stable.superview?.superview?.superview?.superview === panel, "continuous-surface-identity")
+        check(stable.bounds.size == rootSize, "continuous-stable-allocation")
+        check(viewport.bounds.size == viewport.overlayChrome.bounds.size, "continuous-viewport")
+        check(viewport.transform.isIdentity && viewport.superview?.transform.isIdentity == true,
+              "continuous-no-scaling")
+        check(viewport.button.bounds.size == CGSize(width: 44, height: 44), "continuous-control-size")
+        check(abs(viewport.button.frame.maxY - viewport.overlayChrome.bounds.height + viewport.inset + 12) < 1,
+              "continuous-control-clearance")
+        if sample == 7 || sample == 11 {
+          let before = panel?.frame
+          let alpha = viewport.superview?.alpha
+          if sample == 7 { pages.back() } else { pages.push(expandedPage) }
+          check(panel?.frame == before && viewport.superview?.alpha == alpha, "continuous-no-reversal-jump")
+        }
+      }
+      // Geometry is already settled: content still needs a running clock.
+      let sameSize = ContinuousProbe()
+      pages.push(OverlayPage(id: "continuous-same", layout: .expandingToBottom(inset: 12)) { sameSize })
+      try? await Task.sleep(for: .milliseconds(700))
+      check(sameSize.superview?.alpha == 1 && viewport.superview?.alpha == 0, "same-size-content-transition")
+      check(sameSize.superview?.superview?.superview?.superview === panel, "same-size-surface-identity")
+      controller.cancel()
       let message = failures.isEmpty ? "Lifecycle passed" : "Failed: " + failures.joined(separator: ",")
       report(message)
       guard failures.isEmpty else { return }
@@ -182,3 +278,36 @@ private struct ReliabilityButtonStyle: ButtonStyle {
 // A real additional window enters through the same public visibility notification
 // as the system host; this fixture verifies rejection of ambiguous candidates.
 @MainActor private final class UIRemoteKeyboardWindowFixture: UIWindow {}
+
+@MainActor private final class ActivityProbe: UIView, OverlayPageActivity {
+  var events: [Bool] = []
+  var changed: ((Bool) -> Void)?
+  func overlayPageActivityDidChange(isActive: Bool) {
+    events.append(isActive)
+    changed?(isActive)
+  }
+}
+
+/// Test fixture uses only public layout/chrome contracts and actual UIView bounds.
+@MainActor private final class ContinuousProbe: UIView, OverlayPageChrome, OverlayContentSafeArea {
+  let overlayChrome = UIView()
+  let button = UIButton(type: .system)
+  private var bottom: NSLayoutConstraint!
+  private(set) var inset: CGFloat = 0
+  var overlayExtendsToEdges: Bool { true }
+  init() {
+    super.init(frame: .zero)
+    overlayChrome.addSubview(button)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    bottom = button.bottomAnchor.constraint(equalTo: overlayChrome.bottomAnchor, constant: -12)
+    NSLayoutConstraint.activate([
+      button.leadingAnchor.constraint(equalTo: overlayChrome.leadingAnchor, constant: 12),
+      button.widthAnchor.constraint(equalToConstant: 44), button.heightAnchor.constraint(equalToConstant: 44), bottom
+    ])
+  }
+  required init?(coder: NSCoder) { fatalError() }
+  func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
+    inset = insets.bottom
+    bottom.constant = -12 - inset
+  }
+}
