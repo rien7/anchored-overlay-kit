@@ -1,6 +1,23 @@
 # 本地验收记录
 
-## 最新：原生玻璃默认值
+## 最新：可靠性修复 1–5
+
+完成重复关闭回调合并与显式取消结果、present 成功后再提交页面状态、共享 SwiftUI 自然尺寸测量、同帧更新合并与静止布局跳过，以及按源窗口归属的键盘状态和保守屏幕匹配。新增 Reliability 示例与真实触摸驱动；接入文档的宿主清理统一使用 `cancel()`。
+
+- iPhone 17 Pro / iOS 27 模拟器，正常自动签名构建通过。
+- **12/12 组合通过**：Reliability 在聊天页 / Sheet × 浅色 / 深色四组合；最近照片、原菜单及系统选择器、动态容器、玻璃圆角各覆盖浅色聊天页与深色 Sheet。
+- 生命周期场景验证重复关闭、强制完成、被新呈现替换、取消、控制器释放、无效锚点、回调重入、另一个源窗口及歧义键盘宿主回退。SwiftUI 页面通过真实点击验证异步增高、计数和返回状态保留、关闭后原草稿继续输入。
+- 几何读取结果：系统参考圆角 62pt；12pt / 20pt 边距对应底角 50pt / 42pt；限宽及键盘上方回退仍为 24pt。
+- 所有状态截图与 12 段录像抽帧已复核；本地必需证据覆盖 **12/12**。未声称逐帧播放或实测 CPU 降幅。静止时仍有 display-link 几何检查，跳过的是完整布局、测量和动画应用。
+- 开发检查发现 iOS 27 键盘宿主提供不同 UIScreen 代理；仅在单物理屏幕时允许代理匹配，无法确认屏幕身份则回退。多屏幕、真实第三方键盘、iPad 浮动键盘、旧系统运行时仍未实机验收。
+- 验收修正：返回按钮补齐圆角内边距与 44pt 点击区域；驱动等待首屏输入框和软件键盘就绪。早期录像占用、启动竞态及输入前重复空格的失败产物保留在 `.artifacts`，不计入通过结果。
+- SPM 清单、podspec / Python 语法及 diff 检查通过。Lody / Ri Later 产品仓库没有改动。
+
+[本轮本地报告](.acceptances/standalone-anchored-overlay/20261003-100955-reliability/report.md) · [结构化结果](.acceptances/standalone-anchored-overlay/20261003-100955-reliability/result.json)。包含真实触摸日志、AX/几何记录、截图、录像、构建日志及源码/二进制哈希。`lh` 未安装，未在线发布。
+
+复验使用 `scripts/verify.py --scenario reliability`，其余场景分别指定 `pages` / `baseline` / `dynamic` / `glass` 与 `--host chat --appearance light` 或 `--host sheet --appearance dark`。本轮由外层 `lease(None, None)` 持有同一专用模拟器，子进程使用该租约 UDID；全部复用同一个最终签名构建。
+
+## 上一轮：原生玻璃默认值
 
 默认外观统一为无染色 Regular UIGlassEffect（iOS 26+）；旧系统回退 systemMaterial。固定尺寸 UIKit API、OverlayMenuButton、动态容器和页面 API 使用相同默认值。自绘内容可显式设置 `.transparent`，示例已移除重复背景。
 

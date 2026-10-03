@@ -74,3 +74,21 @@ Native default appearance:
   so the existing rendered effect-class check verifies the library default.
 - Baseline SwiftUI menu content has no material background; OverlayMenuButton
   supplies native chrome. Explicit caller backgrounds use `.transparent`.
+
+Lifecycle and reactive pages:
+- `python3 scripts/verify.py --scenario reliability` covers joined dismissal,
+  replacement/cancellation/deallocation outcomes, invalid-anchor presentation,
+  reentrant presentation, source-window isolation and ambiguous-host fallback.
+- The same scene then uses real touches to asynchronously grow a retained SwiftUI
+  page, increment state, navigate away/back and continue typing the original draft.
+  Height checks compare actual accessibility coordinates before/after loading.
+- A fixture window exercises host ambiguity through real visibility notifications;
+  it does not establish third-party keyboard or physical multi-display support.
+- iOS 27 can vend different UIScreen wrappers for the keyboard host and source.
+  Object identity alone incorrectly disables overlap. The library permits a proxy
+  match only with one attached physical screen; unverifiable multi-display hosts
+  fall back and expose a reason. Do not infer identity merely from matching size.
+- Stop a running verification through its runner, allowing its finally block to
+  close video capture; killing a parent shell can orphan simctl recordVideo.
+- Wait for the initial demo input to enter the accessibility tree before tapping
+  the Sheet entry; recording readiness does not imply app UI readiness.

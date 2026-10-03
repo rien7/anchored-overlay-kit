@@ -56,96 +56,30 @@ public struct OverlayButton<Label: View, Content: View>: UIViewRepresentable {
     button.accessibilityTraits = .button
     button.isEnabled = isEnabled
     if !isEnabled { coordinator.closeOwnedPresentation(); return }
-    coordinator.model?.content = content
-    coordinator.model?.fitsContent = fitsContent
-    if let hosted = coordinator.hosted, controller.owns(content: hosted) {
-      controller.update(layout: layout, appearance: appearance)
-      controller.updateKeyboardPolicy(allowsOverlap: allowsKeyboardOverlap)
-      controller.invalidateContentSize()
+    coordinator.hosted?.update(content: content)
+    if let hosted = coordinator.hosted, controller.canUpdate(content: hosted) {
+      controller.update(layout: layout, appearance: appearance, allowsKeyboardOverlap: allowsKeyboardOverlap)
     }
   }
   public static func dismantleUIView(_ button: UIButton, coordinator: Coordinator) {
     coordinator.closeOwnedPresentation()
   }
-  private var fitsContent: Bool {
-    if case .content = layout.height { return true }
-    return false
-  }
-
   @MainActor public final class Coordinator: NSObject {
     fileprivate var parent: OverlayButton
     fileprivate var labelView: (UIView & UIContentView)?
-    fileprivate var model: OverlayViewModel<Content>?
-    fileprivate weak var hosted: UIView?
+    fileprivate weak var hosted: OverlayHostingContent<Content>?
     fileprivate init(_ parent: OverlayButton) { self.parent = parent }
     fileprivate func closeOwnedPresentation() {
-      if let hosted, parent.controller.owns(content: hosted) { parent.controller.dismiss(animated: false) }
-      model = nil
+      if let hosted, parent.controller.owns(content: hosted) { parent.controller.cancel() }
       hosted = nil
     }
     @objc fileprivate func toggle(_ button: UIButton) {
       if let hosted, parent.controller.owns(content: hosted) { parent.controller.dismiss(); return }
-      let model = OverlayViewModel(content: parent.content, fitsContent: parent.fitsContent)
-      self.model = model
-      let root = OverlayHostedRoot(model: model) { [weak self] size in
-        guard let self, self.model === model,
-              let hosted = self.hosted as? OverlayHostingContent,
-              self.parent.controller.owns(content: hosted), size.width > 0,
-              size.height.isFinite, abs(size.width - model.width) < 0.5 else { return }
-        guard abs(hosted.naturalHeight - size.height) > 0.5 else { return }
-        hosted.naturalHeight = size.height
-        self.parent.controller.invalidateContentSize()
-      }
-      let hosted = OverlayHostingContent(
-        content: UIHostingConfiguration { root }.margins(.all, 0).makeContentView(),
-        proposeWidth: { [weak model] width in
-          if model?.width != width { model?.width = width }
-        })
+      let hosted = OverlayHostingContent(content: parent.content)
       self.hosted = hosted
       parent.controller.present(content: hosted, anchoredTo: button, layout: parent.layout,
                                 appearance: parent.appearance, dismissLabel: parent.dismissLabel,
                                 allowsKeyboardOverlap: parent.allowsKeyboardOverlap)
     }
   }
-}
-
-@MainActor private final class OverlayViewModel<Content: View>: ObservableObject {
-  @Published var content: Content
-  @Published var width: CGFloat = 280
-  @Published var fitsContent: Bool
-  init(content: Content, fitsContent: Bool) { self.content = content; self.fitsContent = fitsContent }
-}
-private struct OverlayHostedRoot<Content: View>: View {
-  @ObservedObject var model: OverlayViewModel<Content>
-  let invalidate: @MainActor (CGSize) -> Void
-  var body: some View {
-    model.content
-      .frame(width: model.width, alignment: .topLeading)
-      .fixedSize(horizontal: false, vertical: model.fitsContent)
-      .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
-        // Defer out of SwiftUI's layout transaction to avoid recursive fitting.
-        Task { @MainActor in invalidate(size) }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-  }
-}
-
-
-@MainActor protocol OverlayWidthReceiving: AnyObject {
-  func propose(width: CGFloat)
-}
-
-@MainActor private final class OverlayHostingContent: UIView, OverlayContentSizing, OverlayWidthReceiving {
-  var naturalHeight: CGFloat = 44
-  private let hosted: UIView
-  private let proposeWidth: (CGFloat) -> Void
-  init(content: UIView, proposeWidth: @escaping (CGFloat) -> Void) {
-    hosted = content; self.proposeWidth = proposeWidth
-    super.init(frame: .zero)
-    addSubview(content)
-  }
-  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  func propose(width: CGFloat) { proposeWidth(width) }
-  func overlayHeight(forWidth width: CGFloat) -> CGFloat { naturalHeight }
-  override func layoutSubviews() { super.layoutSubviews(); hosted.frame = bounds }
 }

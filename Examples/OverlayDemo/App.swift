@@ -34,6 +34,7 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
   private var calls = 0
   private var swiftUIHost: UIHostingController<AnyView>?
   private var dynamicHost: UIHostingController<AnyView>?
+  private let reliability = ReliabilityDemo()
   private var recentPhotos: RecentPhotosDemo?
   private let sheet: Bool
 
@@ -61,6 +62,9 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
         controller.sheetPresentationController?.prefersGrabberVisible = true
         self.present(controller, animated: true)
       })
+    }
+    overlay.onPlacementChange = { [weak self] state in
+      self?.status.accessibilityValue = state.placement.rawValue + ":" + (state.fallbackReason?.rawValue ?? "none")
     }
     status.text = "Ready"
     status.numberOfLines = 0
@@ -106,7 +110,9 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
     plus.accessibilityIdentifier = identifier("demo-plus")
     plus.accessibilityValue = "closed"
     overlay.onLayout = { [weak self] rect in
-      self?.status.accessibilityValue = "Panel \(Int(rect.width.rounded())) × \(Int(rect.height.rounded()))"
+      guard let self else { return }
+      self.status.accessibilityValue = "Panel \(Int(rect.width.rounded())) × \(Int(rect.height.rounded())) · " +
+        (self.overlay.placementState?.fallbackReason?.rawValue ?? self.overlay.placement?.rawValue ?? "none")
     }
     overlay.onDismiss = { [weak self] in self?.plus.accessibilityValue = "closed" }
     plus.addAction(UIAction { [weak self] _ in self?.toggleMenu() }, for: .touchUpInside)
@@ -171,7 +177,16 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
       self.overlay.present(content: content, anchoredTo: button, layout: content.layout, dismissLabel: "Close dynamic menu",
                            allowsKeyboardOverlap: !self.keepsAboveKeyboard)
     }, for: .touchUpInside)
-    controls.addArrangedSubview(dynamicUIKit)
+    let checks = UIButton(type: .system)
+    checks.setTitle("Reliability", for: .normal)
+    checks.accessibilityIdentifier = identifier("demo-reliability")
+    checks.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      self.reliability.run(anchor: self.plus) { [weak self] message in self?.status.text = message }
+    }, for: .touchUpInside)
+    let demos = UIStackView(arrangedSubviews: [dynamicUIKit, checks])
+    demos.distribution = .fillEqually
+    controls.addArrangedSubview(demos)
     let swiftLabel = UILabel()
     swiftLabel.text = "SwiftUI trigger + content"
     swiftLabel.font = .preferredFont(forTextStyle: .subheadline)

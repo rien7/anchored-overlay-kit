@@ -5,11 +5,21 @@ public enum OverlayPlacement: String, Sendable {
   case overKeyboard, aboveKeyboard, inAppWindow
 }
 
+public enum OverlayPresentationResult: Equatable, Sendable {
+  case presented, anchorUnavailable, inactiveScene, superseded, unavailable
+}
+
+public enum OverlayDismissalResult: Equatable, Sendable {
+  case dismissed, superseded, cancelled, notPresented
+}
+
 /// A scene-bound transient surface. The caller owns content and business actions.
 /// Initialize before editing begins so keyboard-window notifications are observed.
 @MainActor public final class AnchoredOverlayController: NSObject {
   public private(set) var placement: OverlayPlacement?
   public var isPresented: Bool { surface != nil }
+  public private(set) var placementState: OverlayPlacementState?
+  public var onPlacementChange: ((OverlayPlacementState) -> Void)?
   public var onDismiss: (() -> Void)?
   /// Resolved destination in source-window coordinates, not the animated frame.
   public private(set) var resolvedFrame: CGRect?
@@ -31,7 +41,10 @@ public enum OverlayPlacement: String, Sendable {
   private var motion: [OverlaySpring] = []
   private var target: [CGFloat] = []
   private var lastTick: CFTimeInterval = 0
-  private var closeCompletion: (() -> Void)?
+  private var closeCompletions: [(OverlayDismissalResult) -> Void] = []
+  private var dismissalResult = OverlayDismissalResult.dismissed
+  private var refreshNeeded = true
+  private var geometrySnapshot: GeometrySnapshot?
   private var finishingGeneration = 0
   private var displayLink: CADisplayLink?
   private var closing = false
@@ -50,24 +63,27 @@ public enum OverlayPlacement: String, Sendable {
     surface?.removeFromSuperview()
     shield?.removeFromSuperview()
     NotificationCenter.default.removeObserver(self)
+    for completion in closeCompletions { completion(.cancelled) }
   }
 
   /// Fixed-size convenience with the same system appearance as dynamic overlays.
   /// Pass .transparent when content intentionally supplies its own background.
-  public func present(content: UIView, anchoredTo anchor: UIView, preferredSize: CGSize,
-                      appearance: OverlayAppearance = .standard, dismissLabel: String, allowsKeyboardOverlap: Bool = true) {
+  @discardableResult public func present(content: UIView, anchoredTo anchor: UIView, preferredSize: CGSize,
+                      appearance: OverlayAppearance = .standard, dismissLabel: String, allowsKeyboardOverlap: Bool = true) -> OverlayPresentationResult {
     present(content: content, anchoredTo: anchor,
             layout: OverlayLayout(width: .fixed(preferredSize.width), height: .fixed(preferredSize.height)),
             appearance: appearance, dismissLabel: dismissLabel, allowsKeyboardOverlap: allowsKeyboardOverlap)
   }
 
-  public func present(content: UIView, anchoredTo anchor: UIView, layout: OverlayLayout,
+  @discardableResult public func present(content: UIView, anchoredTo anchor: UIView, layout: OverlayLayout,
                       appearance: OverlayAppearance = .standard,
-                      dismissLabel: String, allowsKeyboardOverlap: Bool = true) {
-    let beforeDismiss = generation
-    let hadSurface = surface != nil
-    dismiss(animated: false)
-    guard generation == beforeDismiss + (hadSurface ? 1 : 0), let window = anchor.window else { return }
+                      dismissLabel: String, allowsKeyboardOverlap: Bool = true) -> OverlayPresentationResult {
+    guard let window = anchor.window, !window.isHidden, !anchor.isHidden else { return .anchorUnavailable }
+    guard window.windowScene?.activationState == .foregroundActive else { return .inactiveScene }
+    let expectedGeneration = generation + (surface != nil && !closing ? 1 : 0)
+    dismissWithResult(animated: false, reason: .superseded)
+    guard generation == expectedGeneration else { return .superseded }
+    guard anchor.window === window else { return .anchorUnavailable }
     generation += 1
     self.anchor = anchor
     source = window
@@ -81,7 +97,7 @@ public enum OverlayPlacement: String, Sendable {
     view.allowsKeyboardOverlap = allowsKeyboardOverlap
     surface = view
     refresh()
-    guard surface != nil else { return }
+    guard surface === view else { return .unavailable }
     let origin = anchor.convert(anchor.bounds, to: window)
     let initial = UIAccessibility.isReduceMotionEnabled ? view.menuFrame : origin
     motion = values(initial, radius: min(origin.width, origin.height) / 2, alpha: 0).map { OverlaySpring(value: $0) }
@@ -94,6 +110,7 @@ public enum OverlayPlacement: String, Sendable {
     link.add(to: .main, forMode: .common)
     displayLink = link
     UIAccessibility.post(notification: .screenChanged, argument: content)
+    return .presented
   }
 
   /// Preserves the mounted content, editing state and spring velocity.
@@ -102,37 +119,37 @@ public enum OverlayPlacement: String, Sendable {
     if self.layout.position != layout.position { expansionTop = resolvedFrame?.minY }
     self.layout = layout
     measurementDirty = true
-    refresh()
-    if transition == .immediate { settleGeometry() }
+    requestRefresh(transition: transition)
   }
 
   /// Atomic page update: geometry, corners and background share one destination.
   public func update(layout: OverlayLayout, appearance: OverlayAppearance,
-                     transition: OverlayTransition = .spring) {
+                     allowsKeyboardOverlap: Bool? = nil, transition: OverlayTransition = .spring) {
     guard surface != nil, !closing else { return }
     if self.layout.position != layout.position { expansionTop = resolvedFrame?.minY }
     self.layout = layout
+    if let allowsKeyboardOverlap { surface?.allowsKeyboardOverlap = allowsKeyboardOverlap }
     if !self.appearance.background.matches(appearance.background) {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
     }
     self.appearance = appearance
     measurementDirty = true
-    refresh()
-    if transition == .immediate { settleGeometry() }
+    requestRefresh(transition: transition)
   }
 
   public func invalidateContentSize(transition: OverlayTransition = .spring) {
     guard surface != nil, !closing else { return }
     measurementDirty = true
-    refresh()
-    if transition == .immediate { settleGeometry() }
+    requestRefresh(transition: transition)
   }
 
   func owns(content: UIView) -> Bool { surface?.content === content }
 
+  func canUpdate(content: UIView) -> Bool { owns(content: content) && !closing }
+
   func updateKeyboardPolicy(allowsOverlap: Bool) {
     surface?.allowsKeyboardOverlap = allowsOverlap
-    refresh()
+    requestRefresh()
   }
 
   public func updateAppearance(_ appearance: OverlayAppearance, transition: OverlayTransition = .spring) {
@@ -141,24 +158,43 @@ public enum OverlayPlacement: String, Sendable {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
     }
     self.appearance = appearance
-    refresh()
-    if transition == .immediate { settleGeometry() }
+    requestRefresh(transition: transition)
   }
 
-  /// Completion runs after both touch shields have been removed. A superseding
-  /// dismissal cancels the old completion; reentrant presentation wins.
+  /// Runs after cleanup unless a newer presentation supersedes this dismissal.
+  /// Repeated calls join the same close operation. Use dismissWithResult to observe cancellation.
   public func dismiss(animated: Bool = true, completion: (() -> Void)? = nil) {
-    guard let view = surface else { completion?(); return }
-    if closing && animated { return }
+    dismissWithResult(animated: animated) { result in
+      if result == .dismissed || result == .notPresented { completion?() }
+    }
+  }
+
+  public func dismissWithResult(animated: Bool = true,
+                                completion: @escaping (OverlayDismissalResult) -> Void) {
+    dismissWithResult(animated: animated, reason: .dismissed, completion: completion)
+  }
+
+  /// Owner teardown cancels pending actions and immediately removes both shields.
+  public func cancel() { dismissWithResult(animated: false, reason: .cancelled) }
+
+  private func dismissWithResult(animated: Bool, reason: OverlayDismissalResult,
+                                 completion: ((OverlayDismissalResult) -> Void)? = nil) {
+    guard let view = surface else { completion?(.notPresented); return }
+    if let completion { closeCompletions.append(completion) }
+    if reason != .dismissed { dismissalResult = reason }
+    if closing {
+      if !animated { finishDismiss() }
+      return
+    }
     generation += 1
     finishingGeneration = generation
     closing = true
-    closeCompletion = completion
+    dismissalResult = reason
     guard animated else { finishDismiss(); return }
     let rect = anchor.flatMap { a in source.map { a.convert(a.bounds, to: $0) } } ?? view.menuFrame
     if UIAccessibility.isReduceMotionEnabled {
       target = motion.map(\.value)
-      target[5] = 0
+      if target.count > 5 { target[5] = 0 }
     } else {
       target = values(rect, radius: min(rect.width, rect.height) / 2, alpha: 0)
     }
@@ -166,7 +202,8 @@ public enum OverlayPlacement: String, Sendable {
 
   private func finishDismiss() {
     let current = finishingGeneration
-    let completion = closeCompletion
+    let completions = closeCompletions
+    let result = dismissalResult
     let previousAnchor = anchor
     displayLink?.invalidate()
     displayLink = nil
@@ -174,15 +211,19 @@ public enum OverlayPlacement: String, Sendable {
     (surface?.content as? OverlayPresentationLifecycle)?.overlayDidDismiss()
     surface?.removeFromSuperview()
     shield?.removeFromSuperview()
-    surface = nil; shield = nil; anchor = nil; source = nil; placement = nil
-    closeCompletion = nil
+    surface = nil; shield = nil; anchor = nil; source = nil; placement = nil; placementState = nil
+    closeCompletions = []
+    geometrySnapshot = nil
+    refreshNeeded = true
     resolvedFrame = nil
     motion = []; target = []
     closing = false
     onDismiss?()
-    guard generation == current else { return }
-    UIAccessibility.post(notification: .screenChanged, argument: previousAnchor)
-    completion?()
+    if generation == current {
+      UIAccessibility.post(notification: .screenChanged, argument: previousAnchor)
+    }
+    let settledResult = generation == current ? result : .superseded
+    for completion in completions { completion(settledResult) }
   }
 
   private func values(_ rect: CGRect, radius: CGFloat, alpha: CGFloat, concentric: CGFloat = 0, bottomRadius: CGFloat? = nil) -> [CGFloat] {
@@ -196,8 +237,19 @@ public enum OverlayPlacement: String, Sendable {
   }
 
   fileprivate func tick(_ link: CADisplayLink) {
-    if !closing { refresh() }
+    if !closing {
+      let snapshot = captureGeometry()
+      if refreshNeeded || snapshot != geometrySnapshot {
+        geometrySnapshot = snapshot
+        refresh()
+      }
+    }
     guard surface != nil, motion.count == 8, target.count == 8 else { return }
+    if zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
+      lastTick = link.timestamp
+      if closing { finishDismiss() }
+      return
+    }
     let elapsed = lastTick == 0 ? link.duration : min(0.1, link.timestamp - lastTick)
     lastTick = link.timestamp
     if UIAccessibility.isReduceMotionEnabled && !closing { settleGeometry() }
@@ -227,28 +279,76 @@ public enum OverlayPlacement: String, Sendable {
     }
   }
 
-  @objc private func background() { dismiss(animated: false) }
+  @objc private func background() { cancel() }
 
   @objc private func sceneDeactivated(_ notification: Notification) {
     guard let scene = notification.object as? UIWindowScene, scene === source?.windowScene else { return }
-    dismiss(animated: false)
+    cancel()
+  }
+
+  private func requestRefresh(transition: OverlayTransition = .spring) {
+    refreshNeeded = true
+    if transition == .immediate { refresh(); settleGeometry() }
+  }
+
+  private struct GeometrySnapshot: Equatable {
+    var anchorFrame: CGRect
+    var windowBounds: CGRect
+    var screenFrame: CGRect
+    var safeArea: UIEdgeInsets
+    var style: Int
+    var valid: Bool
+    var keyboardRevision: UInt
+    var keyboardFrame: CGRect?
+  }
+
+  private func captureGeometry() -> GeometrySnapshot? {
+    guard let anchor, let source else { return nil }
+    return GeometrySnapshot(anchorFrame: anchor.convert(anchor.bounds, to: source),
+      windowBounds: source.bounds, screenFrame: source.convert(source.bounds, to: source.screen.coordinateSpace), safeArea: source.safeAreaInsets,
+      style: anchor.traitCollection.userInterfaceStyle.rawValue,
+      valid: anchor.window === source && !anchor.isHidden && !source.isHidden &&
+        source.windowScene?.activationState == .foregroundActive,
+      keyboardRevision: host.revision, keyboardFrame: host.keyboardFrame(in: source))
   }
 
   fileprivate func refresh() {
+    refreshNeeded = false
     guard let view = surface, let anchor, let source, anchor.window === source,
           !source.isHidden, !anchor.isHidden,
           source.windowScene?.activationState == .foregroundActive else {
-      dismiss(animated: false)
+      cancel()
       return
     }
     if closing { return }
     var destination = source
     let keyboard = host.keyboardFrame(in: source)
-    if view.allowsKeyboardOverlap, let keyboardWindow = host.destination(for: source) {
-      destination = keyboardWindow
-      placement = .overKeyboard
-    } else {
-      placement = keyboard == nil ? .inAppWindow : .aboveKeyboard
+    var reason: OverlayFallbackReason?
+    if keyboard != nil {
+      if view.allowsKeyboardOverlap {
+        let resolution = host.destination(for: source)
+        if let keyboardWindow = resolution.window {
+          destination = keyboardWindow
+          placement = .overKeyboard
+        } else {
+          placement = .aboveKeyboard
+          reason = resolution.reason
+        }
+      } else {
+        placement = .aboveKeyboard
+        reason = .overlapDisabled
+      }
+    } else { placement = .inAppWindow }
+    if let placement {
+      let state = OverlayPlacementState(placement: placement, fallbackReason: reason)
+      if placementState != state {
+        placementState = state
+        let current = generation
+        Task { @MainActor [weak self] in
+          guard let self, self.generation == current, self.placementState == state else { return }
+          self.onPlacementChange?(state)
+        }
+      }
     }
     if destination !== source {
       if shield == nil {
@@ -267,7 +367,7 @@ public enum OverlayPlacement: String, Sendable {
     // never UIView.convert between unrelated windows (which can return infinity).
     let screenRect = source.convert(source.bounds, to: source.screen.coordinateSpace)
     let frame = screenRect.offsetBy(dx: -destination.frame.minX, dy: -destination.frame.minY)
-    guard frame.minX.isFinite, frame.minY.isFinite else { dismiss(animated: false); return }
+    guard frame.minX.isFinite, frame.minY.isFinite else { cancel(); return }
     view.frame = frame
     view.overrideUserInterfaceStyle = anchor.traitCollection.userInterfaceStyle
     let origin = anchor.convert(anchor.bounds, to: source)
@@ -286,6 +386,10 @@ public enum OverlayPlacement: String, Sendable {
       desiredWidth = min(finite(maximum), source.bounds.width - 2 * inset)
     }
     let width = max(0, min(finite(desiredWidth), source.bounds.width - 2 * inset))
+    (view.content as? OverlayContentEnvironment)?.configure(layout: layout) { [weak self, weak content = view.content] in
+      guard let self, let content, self.owns(content: content) else { return }
+      self.invalidateContentSize()
+    }
     (view.content as? OverlayWidthReceiving)?.propose(width: width)
     if abs(measuredWidth - width) > 0.5 { measurementDirty = true }
     var desiredHeight: CGFloat

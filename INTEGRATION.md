@@ -38,7 +38,7 @@ func openMenu() {
 
 override func didMoveToWindow() {
   super.didMoveToWindow()
-  if window == nil { attachmentOverlay.dismiss(animated: false) }
+  if window == nil { attachmentOverlay.cancel() }
 }
 ```
 
@@ -69,7 +69,7 @@ var body: some View {
     .padding()
   }
   .frame(width: 44, height: 44)
-  .onDisappear { menu.dismiss(animated: false) }
+  .onDisappear { menu.cancel() }
 }
 ```
 
@@ -88,9 +88,9 @@ belong to the caller.
 
 - Keep the controller alive while its content is presented. Call `dismiss` before
   navigation/presentation; use its completion for the next modal.
-- Completion runs after both shields are removed. A superseding immediate
-  dismissal cancels pending animated completions; old picker actions cannot run
-  after owner teardown.
+- Completion runs after both shields are removed. Repeated dismissals join one
+  close operation. Use `cancel()` for owner teardown; use `dismissWithResult` to
+  observe `.superseded` / `.cancelled` rather than run an obsolete picker action.
 - `placement` reports actual hosting capability. No keyboard yields `.inAppWindow`;
   an unavailable host or opt-out yields `.aboveKeyboard`; successful hosting yields
   `.overKeyboard`. Keyboard overlap is conditional, including third-party keyboards.

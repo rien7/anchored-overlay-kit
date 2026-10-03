@@ -16,7 +16,7 @@ import UIKit
   public static func swiftUI<Content: View>(id: String, layout: OverlayLayout,
       appearance: OverlayAppearance = .standard, @ViewBuilder content: @escaping () -> Content) -> Self {
     Self(id: id, layout: layout, appearance: appearance) {
-      UIHostingConfiguration { content() }.margins(.all, 0).makeContentView()
+      OverlayHostingContent(content: content())
     }
   }
 }
@@ -36,29 +36,32 @@ import UIKit
 
   public init(controller: AnchoredOverlayController) { self.controller = controller }
 
-  public func present(_ page: OverlayPage, anchoredTo anchor: UIView,
-                      dismissLabel: String, allowsKeyboardOverlap: Bool = true) {
-    host = PageHost()
-    let presentedHost = host
-    host.onDismiss = { [weak self, weak presentedHost] in
-      guard let self, self.host === presentedHost else { return }
+  @discardableResult public func present(_ page: OverlayPage, anchoredTo anchor: UIView,
+                      dismissLabel: String, allowsKeyboardOverlap: Bool = true) -> OverlayPresentationResult {
+    let candidate = PageHost()
+    candidate.onDismiss = { [weak self, weak candidate] in
+      guard let self, self.host === candidate else { return }
       self.history = []; self.pageID = nil
     }
-    history = [page]; pageID = page.id
-    host.show(page, animated: false)
-    controller.present(content: host, anchoredTo: anchor, layout: page.layout,
+    candidate.show(page, animated: false)
+    let result = controller.present(content: candidate, anchoredTo: anchor, layout: page.layout,
                        appearance: page.appearance, dismissLabel: dismissLabel,
                        allowsKeyboardOverlap: allowsKeyboardOverlap)
+    if result == .presented, controller.owns(content: candidate) {
+      host = candidate
+      history = [page]; pageID = page.id
+    }
+    return result
   }
 
   public func push(_ page: OverlayPage, transition: OverlayTransition = .spring) {
-    guard controller.owns(content: host), page.id != pageID else { return }
+    guard controller.canUpdate(content: host), page.id != pageID else { return }
     history.append(page)
     show(page, transition: transition)
   }
 
   public func back(transition: OverlayTransition = .spring) {
-    guard controller.owns(content: host), history.count > 1 else { return }
+    guard controller.canUpdate(content: host), history.count > 1 else { return }
     history.removeLast()
     show(history[history.count - 1], transition: transition)
   }
@@ -70,7 +73,7 @@ import UIKit
   }
 }
 
-@MainActor private final class PageHost: UIView, OverlayContentSizing, OverlayPresentationLifecycle {
+@MainActor private final class PageHost: UIView, OverlayContentSizing, OverlayPresentationLifecycle, OverlayContentEnvironment, OverlayWidthReceiving {
   private var pages: [String: UIView] = [:]
   private var current: UIView?
   private var revision = 0
@@ -124,6 +127,16 @@ import UIKit
     // Inactive pages retain their viewport, scroll position and mounted state.
     current?.frame = bounds
   }
+
+  func configure(layout: OverlayLayout, invalidate: @escaping () -> Void) {
+    guard let current else { return }
+    (current as? OverlayContentEnvironment)?.configure(layout: layout) { [weak self, weak current] in
+      guard let self, self.current === current else { return }
+      invalidate()
+    }
+  }
+
+  func propose(width: CGFloat) { (current as? OverlayWidthReceiving)?.propose(width: width) }
 
   func overlayHeight(forWidth width: CGFloat) -> CGFloat {
     guard let current else { return 0 }

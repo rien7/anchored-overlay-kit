@@ -135,7 +135,7 @@ var body: some View {
     MyContent(expanded: $expanded)
   }
   .frame(width: 44, height: 44)
-  .onDisappear { overlay.dismiss(animated: false) }
+  .onDisappear { overlay.cancel() }
 }
 ```
 
@@ -252,9 +252,10 @@ pages.back()
 ```
 
 `OverlayPage.swiftUI(id:layout:appearance:content:)` accepts SwiftUI content.
-Use bounded layouts for scrollable pages. Natural SwiftUI content height changes
-within a retained page require `controller.invalidateContentSize()`; for a single
-reactively measured SwiftUI page, continue using `OverlayButton`.
+Use bounded layouts for scrollable pages. Retained SwiftUI pages and `OverlayButton`
+share destination-width measurement and automatic natural-height invalidation.
+Observed models and local SwiftUI state update in place; a page factory still runs
+once per retained ID. UIKit fitting changes use `invalidateContentSize()`.
 
 `.expandingToBottom()` captures the previous resolved top on entry, then fills
 to the window's bottom inset. Its position determines height (the `height` field
@@ -268,3 +269,39 @@ In the example, tap the composer **+**, then **Recent Photos** in the attachment
 photo grid supports selection, scrolling, Back, and retained state on reopening.
 The example accesses neither the user's photo library nor the network; attribution
 is in `Examples/PHOTO_CREDITS.md`.
+
+## Presentation results and lifecycle
+
+Both controller `present` overloads and `OverlayPages.present` return an
+`OverlayPresentationResult` (`@discardableResult`). `.presented` means the
+presentation started; `.anchorUnavailable`, `.inactiveScene`, `.superseded`, and
+`.unavailable` explain why it did not. Invalid anchors do not replace an existing
+presentation. Page history commits only after a successful presentation.
+
+Repeated `dismiss` calls join the same close operation; an immediate dismiss
+finishes that operation without dropping its waiters. `dismissWithResult` delivers
+exactly one `.dismissed`, `.superseded`, `.cancelled`, or `.notPresented` result.
+A new presentation supersedes pending actions. `cancel()` is the teardown path:
+it removes the surface immediately and cancels pending actions. Backgrounding,
+scene deactivation, controller release and SwiftUI owner removal use cancellation.
+Legacy `dismiss` completion runs only for `.dismissed` / `.notPresented`. All results arrive after
+cleanup; callbacks may start a new presentation. Avoid strong owner capture in
+long-lived callbacks.
+
+`placementState` and `onPlacementChange` expose actual placement and a fallback
+reason: overlap disabled, no host, ambiguous hosts, source not editing,
+unattributed keyboard, or unverifiable display identity. Keyboard notifications
+are attributed to a single local editing window. A source-local keyboard layout
+guide supplies conservative avoidance when attribution is unavailable.
+Remote keyboard screens may be proxy objects. The proxy exception is restricted
+to one attached physical display; multiple displays require a verifiable screen
+match, otherwise the overlay stays in its source window. This isolated check uses
+public, deprecated screen enumeration because open scene sessions cannot prove
+that there are no other attached displays. It does not guarantee third-party
+keyboard or multi-display compatibility.
+
+A lightweight display-link geometry snapshot retains anchor/scroll tracking.
+Unchanged snapshots with settled motion skip layout, measurement, corner resolution
+and animation application. Invalidation is coalesced to a frame; `.immediate`
+resolves synchronously. This reduces idle work but does not stop display-link
+callbacks or claim zero idle CPU usage.

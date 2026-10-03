@@ -136,6 +136,7 @@ def exercise(ui, sheet):
         ui.axe('swipe', '--start-x', '200', '--start-y', str(title['y']), '--end-x', '200', '--end-y', '90', '--duration', '.5', '--post-delay', '.7')
         ui.capture('full-sheet')
     ui.tap('demo-input')
+    ui.keyboard()
     ui.axe('type', 'overlay draft')
     keyboard = ui.keyboard()
     field = ui.element('demo-input')
@@ -239,7 +240,7 @@ def main():
     parser.add_argument('--udid')
     parser.add_argument('--runtime')
     parser.add_argument('--skip-build', action='store_true')
-    parser.add_argument('--scenario', choices=['baseline', 'dynamic', 'glass', 'pages'], default='baseline')
+    parser.add_argument('--scenario', choices=['baseline', 'dynamic', 'glass', 'pages', 'reliability'], default='baseline')
     parser.add_argument('--host', choices=['chat', 'sheet'])
     parser.add_argument('--appearance', choices=['light', 'dark'])
     parser.add_argument('--output', type=Path, default=ROOT / '.artifacts/acceptance')
@@ -289,7 +290,11 @@ def main():
                                 raise RuntimeError('Recorder exited before start')
                     else:
                         raise RuntimeError('Recorder did not start')
-                    if args.scenario == 'pages':
+                    ui.element('demo-input')
+                    if args.scenario == 'reliability':
+                        from verify_reliability import exercise as reliability_exercise
+                        reliability_exercise(ui, host == 'sheet')
+                    elif args.scenario == 'pages':
                         from verify_pages import exercise as pages_exercise
                         pages_exercise(ui, host == 'sheet')
                     elif args.scenario == 'glass':
