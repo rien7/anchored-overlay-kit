@@ -33,7 +33,6 @@ public struct OverlayButton<Label: View, Content: View>: UIViewRepresentable {
   public func updateUIView(_ button: UIButton, context: Context) {
     let coordinator = context.coordinator
     if coordinator.parent.controller !== controller { coordinator.closeOwnedPresentation() }
-    let previousLayout = coordinator.parent.layout
     coordinator.parent = self
     if let labelView = coordinator.labelView {
       labelView.configuration = UIHostingConfiguration { label }.margins(.all, 0)
@@ -60,8 +59,7 @@ public struct OverlayButton<Label: View, Content: View>: UIViewRepresentable {
     coordinator.model?.content = content
     coordinator.model?.fitsContent = fitsContent
     if let hosted = coordinator.hosted, controller.owns(content: hosted) {
-      if previousLayout != layout { controller.updateLayout(layout) }
-      controller.updateAppearance(appearance)
+      controller.update(layout: layout, appearance: appearance)
       controller.updateKeyboardPolicy(allowsOverlap: allowsKeyboardOverlap)
       controller.invalidateContentSize()
     }

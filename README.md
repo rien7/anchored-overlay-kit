@@ -50,10 +50,10 @@ trigger. These policies contain no menu-row counts or business page identities.
 
 The library owns the outer material, animated corner policy and clipping.
 Customize with `OverlayAppearance(cornerRadius:background:)`: `.material`,
-`.color`, or `.custom { UIView(...) }`. The custom view is a noninteractive
+`.glass`, `.color`, or `.custom { UIView(...) }`. The custom view is a noninteractive
 background. Content owns its internal padding, typography and controls.
 `updateAppearance` can animate the radius alongside a layout change; background
-replacement itself is immediate. `.transparent` delegates all chrome to content.
+changes crossfade when animated. `.transparent` delegates all chrome to content.
 
 Bounds, position, radius and opacity follow critically damped springs. Retargeting
 preserves current values and velocities; `.immediate` snaps geometry. Content is
@@ -62,8 +62,9 @@ is never stretched and required-height rows aren't squeezed during opening.
 Visible and touch geometry use the same frame each tick. Reduce Motion snaps
 geometry and retains a fade. Layout changes do not dismiss or remount content.
 
-The original `preferredSize:` overload remains available, with transparent
-container chrome to preserve caller-styled menus.
+The `preferredSize:` overload and `OverlayMenuButton` share the native default
+container appearance. For existing caller-styled menus, pass `appearance: .transparent`
+or remove the content background to avoid stacking materials.
 
 ## Bottom-edge concentric panels and Liquid Glass
 
@@ -111,7 +112,10 @@ container does not add glass effects to individual rows. On earlier systems,
 `fallback` selects a `UIBlurEffect.Style` (default `.systemMaterial`). Reapplying
 an identical built-in background preserves its effect view; switching material
 is immediate and does not remount content. `.material`, `.color` and `.custom`
-remain available. `standard` remains system material: glass is an explicit choice.
+remain available. `standard` and both appearance initializers default to untinted
+Regular `UIGlassEffect` on iOS 26 and later, including iOS 27; older systems use
+`.systemMaterial`. This is Apple’s public native Liquid Glass rendering, not a
+custom blur approximation or access to private UIMenu material variants.
 
 The demo's **Glass:** button cycles regular, blue-tinted clear, system material,
 20pt edge spacing, and a 300pt width cap. Both UIKit and SwiftUI expose this flow.
@@ -220,3 +224,47 @@ See [VALIDATION.md](VALIDATION.md) for the completed local Simulator run and its
 SwiftUI natural-size observation uses Apple's
 [`onGeometryChange`](https://developer.apple.com/documentation/swiftui/view/ongeometrychange(for:of:action:)),
 with measurement updates deferred out of the layout transaction.
+
+### Retained pages and coordinated transitions
+
+Use `OverlayPages` when an attachment menu becomes a photo grid or another
+panel. It retains each page's view by ID for the current presentation, crossfades
+content in 180 ms, and updates layout/material/corners together. Geometry keeps
+its interruptible spring; inactive pages preserve their allocated viewport.
+Closing the overlay releases the retained views. Reusing an ID reuses its view:
+keep IDs stable and unique for logical pages; use a new ID for fresh state.
+
+```swift
+let pages = OverlayPages(controller: overlay) // retain with the owning screen
+let menu = OverlayPage(
+  id: "menu",
+  layout: OverlayLayout(width: .fixed(240), height: .fixed(220)),
+  appearance: OverlayAppearance(background: .glass(.regular))
+) { makeMenu() }
+pages.present(menu, anchoredTo: plusButton, dismissLabel: "Close attachments")
+
+pages.push(OverlayPage(
+  id: "photos",
+  layout: .expandingToBottom(inset: 12),
+  appearance: OverlayAppearance(corners: .bottomConcentric(), background: .glass(.regular))
+) { makePhotoGrid() })
+pages.back()
+```
+
+`OverlayPage.swiftUI(id:layout:appearance:content:)` accepts SwiftUI content.
+Use bounded layouts for scrollable pages. Natural SwiftUI content height changes
+within a retained page require `controller.invalidateContentSize()`; for a single
+reactively measured SwiftUI page, continue using `OverlayButton`.
+
+`.expandingToBottom()` captures the previous resolved top on entry, then fills
+to the window's bottom inset. Its position determines height (the `height` field
+is ignored); available width and safe-area constraints still apply. An initial
+presentation without a previous frame starts at the safe top boundary. Keyboard
+fallback can reduce the available space. On return, the preceding page's declared
+layout is restored. `update(layout:appearance:transition:)` is also available for
+callers that own their own page routing.
+
+In the example, tap the composer **+**, then **Recent Photos** in the attachment menu. The bundled
+photo grid supports selection, scrolling, Back, and retained state on reopening.
+The example accesses neither the user's photo library nor the network; attribution
+is in `Examples/PHOTO_CREDITS.md`.

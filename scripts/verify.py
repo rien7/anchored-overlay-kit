@@ -148,6 +148,9 @@ def exercise(ui, sheet):
     # Physical tap in menu/keyboard overlap proves the menu, not a key, receives it.
     overlap_y = (max(row['y'], keyboard['y']) + row['y'] + row['height']) / 2
     ui.axe('tap', '-x', str(row['x'] + row['width'] / 2), '-y', str(overlap_y), '--tap-style', 'physical', '--post-delay', '.4')
+    ui.element('photos-grid')
+    ui.capture('recent-photos-grid')
+    ui.tap('photos-done')
     ui.no_menu()
     assert 'Recent Photos · calls 1 · released true' in ui.element('demo-status')['AXLabel']
     assert ui.element('demo-input').get('AXValue') == 'overlay draft', 'Menu tap typed into draft'
@@ -236,7 +239,7 @@ def main():
     parser.add_argument('--udid')
     parser.add_argument('--runtime')
     parser.add_argument('--skip-build', action='store_true')
-    parser.add_argument('--scenario', choices=['baseline', 'dynamic', 'glass'], default='baseline')
+    parser.add_argument('--scenario', choices=['baseline', 'dynamic', 'glass', 'pages'], default='baseline')
     parser.add_argument('--host', choices=['chat', 'sheet'])
     parser.add_argument('--appearance', choices=['light', 'dark'])
     parser.add_argument('--output', type=Path, default=ROOT / '.artifacts/acceptance')
@@ -286,7 +289,10 @@ def main():
                                 raise RuntimeError('Recorder exited before start')
                     else:
                         raise RuntimeError('Recorder did not start')
-                    if args.scenario == 'glass':
+                    if args.scenario == 'pages':
+                        from verify_pages import exercise as pages_exercise
+                        pages_exercise(ui, host == 'sheet')
+                    elif args.scenario == 'glass':
                         from verify_glass import exercise as glass_exercise
                         glass_exercise(ui, host == 'sheet')
                     elif args.scenario == 'dynamic':

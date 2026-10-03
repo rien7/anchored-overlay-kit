@@ -50,7 +50,10 @@ not need to change: overlay geometry never enters composer measurement.
 ## SwiftUI / Ri Later
 
 Use one stable controller per editor. The public SwiftUI adapter owns the native
-trigger and renders SwiftUI content using `UIHostingConfiguration`.
+trigger and renders SwiftUI content using `UIHostingConfiguration`. The container
+defaults to native Regular Liquid Glass on iOS 26+ and system material earlier.
+Do not add a second material background to the content; pass `appearance: .transparent`
+only when intentionally supplying your own container styling.
 
 ```swift
 @State private var menu = AnchoredOverlayController()
@@ -64,7 +67,6 @@ var body: some View {
       Button("Tag") { menu.dismiss { insertTag() } }
     }
     .padding()
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
   }
   .frame(width: 44, height: 44)
   .onDisappear { menu.dismiss(animated: false) }
@@ -72,9 +74,9 @@ var body: some View {
 ```
 
 Observable models read by hosted SwiftUI content may continue updating in place.
-Apps with multi-page reference browsing retain their own navigation, loading,
-selection snapshots and content models; the library does not import those
-features. A UIKit anchor can also supply a `UIHostingConfiguration` content view
+Apps retain loading, selection snapshots and content models. For multi-page
+reference browsing, keep existing navigation or opt into OverlayPages below;
+the library does not import application features. A UIKit anchor can also supply a `UIHostingConfiguration` content view
 directly to `present`.
 
 The adapter honors `.disabled`, removes its overlay when dismantled, and accepts
@@ -157,3 +159,17 @@ noninteractive background view. Prefer `.glass` for system Liquid Glass; the
 package owns its version-gated material fallback.
 The package owns its frame/clipping; labels and content styling remain app-owned.
 The default material works from iOS 16 and does not claim Liquid Glass parity.
+
+## Menu to content page
+
+Keep one `OverlayPages(controller:)` per active presentation owner. Each
+`OverlayPage` supplies a stable ID, content factory, layout and appearance.
+Use `push` / `back` to coordinate content crossfade with container motion; do not
+call `present` again for an internal page transition. UIKit factories return
+views; `OverlayPage.swiftUI` wraps SwiftUI content. The library owns only page
+presentation and retained view lifetime, not photo loading, permissions, uploads,
+or camera capture. Views are released when the overlay is dismissed.
+
+Use `.expandingToBottom(inset: 12)` for a grid that grows down from the menu's
+current resolved top. Pair with `.bottomConcentric()` for matching bottom corners.
+The controller still clamps to the actual window/keyboard-host constraints.

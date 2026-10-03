@@ -34,6 +34,7 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
   private var calls = 0
   private var swiftUIHost: UIHostingController<AnyView>?
   private var dynamicHost: UIHostingController<AnyView>?
+  private var recentPhotos: RecentPhotosDemo?
   private let sheet: Bool
 
   init(sheet: Bool = false) { self.sheet = sheet; super.init(nibName: nil, bundle: nil) }
@@ -137,7 +138,6 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
             .accessibilityIdentifier("swiftui-" + title)
         }
       }
-      .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
     }.frame(width: 44, height: 44)
     let host = UIHostingController(rootView: AnyView(swiftUI))
     swiftUIHost = host
@@ -168,7 +168,7 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
     dynamicUIKit.addAction(UIAction { [weak self, weak dynamicUIKit] _ in
       guard let self, let button = dynamicUIKit else { return }
       let content = DynamicUIKitContent(overlay: self.overlay)
-      self.overlay.present(content: content, anchoredTo: button, layout: content.layout, appearance: OverlayAppearance(background: .glass(.regular)), dismissLabel: "Close dynamic menu",
+      self.overlay.present(content: content, anchoredTo: button, layout: content.layout, dismissLabel: "Close dynamic menu",
                            allowsKeyboardOverlap: !self.keepsAboveKeyboard)
     }, for: .touchUpInside)
     controls.addArrangedSubview(dynamicUIKit)
@@ -190,36 +190,11 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
 
   private func toggleMenu() {
     if overlay.isPresented { overlay.dismiss(); return }
-    let menu = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-    menu.layer.cornerRadius = 24
-    menu.clipsToBounds = true
-    let stack = UIStackView()
-    stack.axis = .vertical
-    stack.distribution = .fillEqually
-    for (title, symbol) in [("Files", "folder"), ("Photo Library", "photo.on.rectangle"), ("Recent Photos", "photo")] {
-      var configuration = UIButton.Configuration.plain()
-      configuration.title = title
-      configuration.image = UIImage(systemName: symbol)
-      configuration.imagePadding = 12
-      configuration.baseForegroundColor = .label
-      configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
-      let button = UIButton(configuration: configuration)
-      button.contentHorizontalAlignment = .leading
-      button.accessibilityIdentifier = "menu-" + title
-      button.addAction(UIAction { [weak self] _ in self?.selected(title) }, for: .touchUpInside)
-      stack.addArrangedSubview(button)
-    }
-    stack.translatesAutoresizingMaskIntoConstraints = false
-    menu.contentView.addSubview(stack)
-    NSLayoutConstraint.activate([
-      stack.topAnchor.constraint(equalTo: menu.contentView.topAnchor),
-      stack.bottomAnchor.constraint(equalTo: menu.contentView.bottomAnchor),
-      stack.leadingAnchor.constraint(equalTo: menu.contentView.leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: menu.contentView.trailingAnchor),
-    ])
+    if recentPhotos == nil { recentPhotos = RecentPhotosDemo(controller: overlay) }
     plus.accessibilityValue = "open"
-    overlay.present(content: menu, anchoredTo: plus, preferredSize: CGSize(width: 280, height: 168),
-                    dismissLabel: "Close menu", allowsKeyboardOverlap: !keepsAboveKeyboard)
+    recentPhotos?.present(from: plus, allowsKeyboardOverlap: !keepsAboveKeyboard) { [weak self] action in
+      self?.selected(action)
+    }
   }
 
   private func selected(_ action: String) {

@@ -44,7 +44,8 @@ Dynamic containers:
 - SwiftUI measurements come from `onGeometryChange` at the resolved width.
   Fitting a hosting view at its old allocation can report a stale height.
 - The sample preserves a hidden list's nonzero viewport in application code;
-  the package owns container layout, not business-page caching or navigation.
+  the single-page API owns container layout. The optional OverlayPages API owns
+  retained presentation views and back navigation, never business data.
 
 
 Concentric glass containers:
@@ -58,3 +59,18 @@ Concentric glass containers:
   values. The library exposes no test-only API or forced system-version switch.
 - Preserve identical glass backgrounds during parent SwiftUI updates. Recreating
   an effect view can restart its appearance even though the content identity stays.
+
+Retained page transitions:
+- `python3 scripts/verify.py --scenario pages --output .artifacts/pages-acceptance`
+  exercises composer + → Recent Photos with an offline grid in both hosts/themes: stable top edge,
+  keyboard overlap, selection and scroll preservation, repeated back/push navigation,
+  and continued draft input after dismissal. Bundled photo credits are in
+  `Examples/PHOTO_CREDITS.md`.
+- Never lay out the incoming retained page at the outgoing page's allocation.
+  A transient narrow viewport can alter UIScrollView offset despite stable identity.
+
+Native default appearance:
+- Regular cases in the glass fixture read `OverlayAppearance.standard.background`,
+  so the existing rendered effect-class check verifies the library default.
+- Baseline SwiftUI menu content has no material background; OverlayMenuButton
+  supplies native chrome. Explicit caller backgrounds use `.transparent`.

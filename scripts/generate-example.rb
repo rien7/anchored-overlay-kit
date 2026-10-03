@@ -6,6 +6,9 @@ group = project.main_group.new_group('OverlayDemo', 'OverlayDemo')
 Dir.glob(File.join(root, 'Examples/OverlayDemo/*.swift')).sort.each do |path|
   target.source_build_phase.add_file_reference(group.new_file(File.basename(path)))
 end
+photos = group.new_file('Photos')
+photos.last_known_file_type = 'folder'
+target.resources_build_phase.add_file_reference(photos)
 package = project.new(Xcodeproj::Project::Object::XCLocalSwiftPackageReference)
 package.relative_path = '..'
 project.root_object.package_references << package

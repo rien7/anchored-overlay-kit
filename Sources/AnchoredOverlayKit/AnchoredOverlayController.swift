@@ -24,6 +24,7 @@ public enum OverlayPlacement: String, Sendable {
   private var appearance = OverlayAppearance.standard
   private let cornerReference = OverlayCornerReference()
   private var layoutRevision = 0
+  private var expansionTop: CGFloat?
   private var measuredWidth: CGFloat = -1
   private var measuredHeight: CGFloat = 0
   private var measurementDirty = true
@@ -51,12 +52,13 @@ public enum OverlayPlacement: String, Sendable {
     NotificationCenter.default.removeObserver(self)
   }
 
-  /// Compatibility entry point: the supplied content owns its existing chrome.
+  /// Fixed-size convenience with the same system appearance as dynamic overlays.
+  /// Pass .transparent when content intentionally supplies its own background.
   public func present(content: UIView, anchoredTo anchor: UIView, preferredSize: CGSize,
-                      dismissLabel: String, allowsKeyboardOverlap: Bool = true) {
+                      appearance: OverlayAppearance = .standard, dismissLabel: String, allowsKeyboardOverlap: Bool = true) {
     present(content: content, anchoredTo: anchor,
             layout: OverlayLayout(width: .fixed(preferredSize.width), height: .fixed(preferredSize.height)),
-            appearance: .transparent, dismissLabel: dismissLabel, allowsKeyboardOverlap: allowsKeyboardOverlap)
+            appearance: appearance, dismissLabel: dismissLabel, allowsKeyboardOverlap: allowsKeyboardOverlap)
   }
 
   public func present(content: UIView, anchoredTo anchor: UIView, layout: OverlayLayout,
@@ -69,6 +71,7 @@ public enum OverlayPlacement: String, Sendable {
     generation += 1
     self.anchor = anchor
     source = window
+    expansionTop = nil
     self.layout = layout
     self.appearance = appearance
     measurementDirty = true
@@ -96,7 +99,23 @@ public enum OverlayPlacement: String, Sendable {
   /// Preserves the mounted content, editing state and spring velocity.
   public func updateLayout(_ layout: OverlayLayout, transition: OverlayTransition = .spring) {
     guard surface != nil, !closing else { return }
+    if self.layout.position != layout.position { expansionTop = resolvedFrame?.minY }
     self.layout = layout
+    measurementDirty = true
+    refresh()
+    if transition == .immediate { settleGeometry() }
+  }
+
+  /// Atomic page update: geometry, corners and background share one destination.
+  public func update(layout: OverlayLayout, appearance: OverlayAppearance,
+                     transition: OverlayTransition = .spring) {
+    guard surface != nil, !closing else { return }
+    if self.layout.position != layout.position { expansionTop = resolvedFrame?.minY }
+    self.layout = layout
+    if !self.appearance.background.matches(appearance.background) {
+      surface?.panel.setBackground(appearance.background, animated: transition == .spring)
+    }
+    self.appearance = appearance
     measurementDirty = true
     refresh()
     if transition == .immediate { settleGeometry() }
@@ -119,7 +138,7 @@ public enum OverlayPlacement: String, Sendable {
   public func updateAppearance(_ appearance: OverlayAppearance, transition: OverlayTransition = .spring) {
     guard surface != nil, !closing else { return }
     if !self.appearance.background.matches(appearance.background) {
-      surface?.panel.setBackground(appearance.background)
+      surface?.panel.setBackground(appearance.background, animated: transition == .spring)
     }
     self.appearance = appearance
     refresh()
@@ -152,6 +171,7 @@ public enum OverlayPlacement: String, Sendable {
     displayLink?.invalidate()
     displayLink = nil
     cornerReference.removeFromSuperview()
+    (surface?.content as? OverlayPresentationLifecycle)?.overlayDidDismiss()
     surface?.removeFromSuperview()
     shield?.removeFromSuperview()
     surface = nil; shield = nil; anchor = nil; source = nil; placement = nil
@@ -253,7 +273,7 @@ public enum OverlayPlacement: String, Sendable {
     let origin = anchor.convert(anchor.bounds, to: source)
     let top = source.bounds.minY + source.safeAreaInsets.top + 8
     var bottom = source.bounds.maxY - max(16, source.safeAreaInsets.bottom)
-    if case .bottomEdge(let margin) = layout.position {
+    if let margin = layout.position.edgeInset {
       bottom = source.bounds.maxY - max(0, finite(margin))
     }
     if placement == .aboveKeyboard, let keyboard { bottom = min(bottom, keyboard.minY - 8) }
@@ -290,9 +310,12 @@ public enum OverlayPlacement: String, Sendable {
       bottom = max(top, bottom - max(0, finite(margin)))
     }
     bottom = max(top, bottom)
-    if case .bottomEdge = layout.position, case .content(let maximum) = layout.height {
+    if layout.position.edgeInset != nil, case .content(let maximum) = layout.height {
       let clearance = max(0, bottom - (source.bounds.maxY - source.safeAreaInsets.bottom))
       desiredHeight = min(finite(maximum), max(0, finite(measuredHeight)) + clearance)
+    }
+    if case .expandingToBottom = layout.position {
+      desiredHeight = bottom - max(top, expansionTop ?? top)
     }
     let height = max(0, min(finite(desiredHeight), bottom - top))
     let x: CGFloat
@@ -301,14 +324,14 @@ public enum OverlayPlacement: String, Sendable {
     case .anchored:
       x = min(max(source.bounds.minX + inset, origin.minX), source.bounds.maxX - width - inset)
       y = min(max(top, origin.midY - height / 2), bottom - height)
-    case .bottom, .bottomEdge:
+    case .bottom, .bottomEdge, .expandingToBottom:
       x = source.bounds.midX - width / 2
       y = bottom - height
     }
     let rect = CGRect(x: x, y: y, width: width, height: height)
     view.menuFrame = rect
     var clearance: CGFloat = 0
-    if case .bottomEdge = layout.position {
+    if layout.position.edgeInset != nil {
       clearance = max(0, rect.maxY - (source.bounds.maxY - source.safeAreaInsets.bottom))
     }
     // The background reaches the window edge, but controls stay above the home
@@ -321,7 +344,7 @@ public enum OverlayPlacement: String, Sendable {
     case .fixed(let radius): topRadius = radius; bottomRadius = radius
     case .bottomConcentric(let top, let fallback):
       topRadius = top; bottomRadius = fallback
-      if #available(iOS 26.0, *), case .bottomEdge(let margin) = layout.position,
+      if #available(iOS 26.0, *), let margin = layout.position.edgeInset,
          placement != .aboveKeyboard,
          abs(rect.minX - source.bounds.minX - max(0, finite(margin))) < 0.5,
          abs(source.bounds.maxX - rect.maxX - max(0, finite(margin))) < 0.5 {
@@ -408,8 +431,8 @@ public enum OverlayPlacement: String, Sendable {
     addSubview(content)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  func setBackground(_ background: OverlayAppearance.Background) {
-    backdrop?.removeFromSuperview()
+  func setBackground(_ background: OverlayAppearance.Background, animated: Bool = false) {
+    let previous = backdrop
     let view: UIView
     switch background {
     case .material(let style): view = UIVisualEffectView(effect: UIBlurEffect(style: style))
@@ -429,6 +452,13 @@ public enum OverlayPlacement: String, Sendable {
     view.layer.cornerCurve = .circular
     insertSubview(view, at: 0)
     backdrop = view
+    if animated, let previous {
+      view.alpha = 0
+      UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+        view.alpha = 1
+        previous.alpha = 0
+      } completion: { _ in previous.removeFromSuperview() }
+    } else { previous?.removeFromSuperview() }
     appliedRadii = nil
     setNeedsLayout()
   }

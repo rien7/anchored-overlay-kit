@@ -241,7 +241,7 @@ private enum GlassPreset: Int, CaseIterable {
     switch self {
     case .clear: background = .glass(.clear, tint: .systemBlue.withAlphaComponent(0.12))
     case .material: background = .material(.systemMaterial)
-    default: background = .glass(.regular)
+    default: background = OverlayAppearance.standard.background
     }
     return OverlayAppearance(corners: expanded ? .bottomConcentric(top: 24, fallback: 24) : .fixed(24), background: background)
   }

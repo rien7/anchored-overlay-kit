@@ -17,12 +17,20 @@ public struct OverlayLayout: Equatable, Sendable {
     case bottom(inset: CGFloat = 16)
     /// Background reaches the window edge; content receives bottom clearance.
     case bottomEdge(inset: CGFloat = 12)
+    /// Capture the current panel top on entry, then extend to the window bottom.
+    case expandingToBottom(inset: CGFloat = 12)
   }
   public var width: Width
   public var height: Height
   public var position: Position
   public init(width: Width, height: Height, position: Position = .anchored) {
     self.width = width; self.height = height; self.position = position
+  }
+  /// Retains the previous destination top and fills down to the window edge.
+  /// On initial presentation (no previous frame), uses the safe top boundary.
+  public static func expandingToBottom(inset: CGFloat = 12, maxWidth: CGFloat = 600) -> Self {
+    Self(width: .available(inset: inset, max: maxWidth), height: .viewportFraction(1),
+         position: .expandingToBottom(inset: inset))
   }
   /// Equal horizontal and bottom window-edge spacing, independent of safe area.
   public static func bottomEdge(inset: CGFloat = 12, height: Height, maxWidth: CGFloat = 600) -> Self {
@@ -59,11 +67,11 @@ public enum OverlayTransition: Sendable { case immediate, spring }
       }
     }
   }
-  public init(corners: Corners, background: Background = .material(.systemMaterial)) {
+  public init(corners: Corners, background: Background = .glass(.regular)) {
     self.corners = corners; self.background = background
   }
   /// Compatibility spelling for a uniform, fixed radius.
-  public init(cornerRadius: CGFloat = 24, background: Background = .material(.systemMaterial)) {
+  public init(cornerRadius: CGFloat = 24, background: Background = .glass(.regular)) {
     self.init(corners: .fixed(cornerRadius), background: background)
   }
   public var cornerRadius: CGFloat {
@@ -75,6 +83,7 @@ public enum OverlayTransition: Sendable { case immediate, spring }
     }
     set { corners = .fixed(newValue) }
   }
+  /// Native Regular Liquid Glass on iOS 26+, system material on earlier systems.
   public static var standard: Self { Self() }
   public static var transparent: Self { Self(cornerRadius: 0, background: .color(.clear)) }
 }
@@ -99,5 +108,14 @@ struct OverlaySpring {
     value = target + (offset + coefficient * elapsed) * decay
     velocity = (velocity - omega * coefficient * elapsed) * decay
     if abs(value - target) < 0.02 && abs(velocity) < 0.1 { value = target; velocity = 0 }
+  }
+}
+
+extension OverlayLayout.Position {
+  var edgeInset: CGFloat? {
+    switch self {
+    case .bottomEdge(let inset), .expandingToBottom(let inset): return inset
+    default: return nil
+    }
   }
 }
