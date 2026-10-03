@@ -32,7 +32,9 @@ def exercise(ui, sheet):
         ui.axe('tap', '--label', 'Sheet', '--tap-style', 'physical', '--post-delay', '.7')
         ui.prefix = 'sheet-'
     ui.tap('demo-input')
+    ui.keyboard()
     ui.axe('type', 'glass draft')
+    assert ui.element('demo-input')['AXValue'] == 'glass draft', 'Initial draft injection failed'
     ui.keyboard()
     observations = []
     for adapter in ['UIKit', 'SwiftUI']:

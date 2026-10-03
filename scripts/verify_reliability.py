@@ -7,7 +7,9 @@ def exercise(ui, sheet):
         ui.axe('tap', '--label', 'Sheet', '--tap-style', 'physical', '--post-delay', '.7')
         ui.prefix = 'sheet-'
     ui.tap('demo-input')
+    ui.keyboard()
     ui.axe('type', 'reliable draft')
+    assert ui.element('demo-input')['AXValue'] == 'reliable draft', 'Initial draft injection failed'
     ui.keyboard()
     ui.tap('demo-reliability')
     ui.wait(lambda items: any(i.get('AXLabel') == 'Lifecycle passed' for i in items), 'Lifecycle checks failed')

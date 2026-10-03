@@ -86,14 +86,14 @@ let tinted = OverlayAppearance(
 `bottomEdge` uses **window edges**, with equal horizontal and bottom spacing until
 `maxWidth` caps the width. Existing `.bottom(inset:)` retains its safe-area-based
 behavior. The background can extend into the bottom safe area; the package reduces
-the content allocation by the remaining Home Indicator clearance. Do not add that
-clearance a second time. For `.content(max:)`, the cap includes this clearance;
+the content allocation by the remaining Home Indicator clearance unless content
+opts into `OverlayContentSafeArea` (see below). Do not add that clearance a second time. For `.content(max:)`, the cap includes this clearance;
 fixed and fractional heights also describe the outer panel, not the content.
 
 On iOS 26+, `.bottomConcentric` resolves the two bottom corners independently with
 UIKit's public `containerConcentric` API in the **source window**. The keyboard
-hosting window is never the corner reference. With equal edge spacing and circular
-corners, the settled relationship is `innerRadius = max(0, outerRadius - inset)`;
+hosting window is never the corner reference. With equal edge spacing, the
+settled radii satisfy `innerRadius = max(0, outerRadius - inset)`;
 there is no device-model table or private screen-radius lookup. The top corners
 use `top`. Geometry is reevaluated during motion; a spring blends corner policies
 when switching between compact and expanded states, so intermediate transition
@@ -229,8 +229,12 @@ with measurement updates deferred out of the layout transaction.
 
 Use `OverlayPages` when an attachment menu becomes a photo grid or another
 panel. It retains each page's view by ID for the current presentation, crossfades
-content in 180 ms, and updates layout/material/corners together. Geometry keeps
-its interruptible spring; inactive pages preserve their allocated viewport.
+content with direction-aware scaling, and updates layout/material/corners on the
+same display-link spring clock. Incoming content fades in as outgoing content
+recedes; interruptions start from rendered opacity and scale. Geometry retains
+its velocity; inactive pages preserve their allocated viewport. Presentation and
+dismissal scale a wrapper around the real view, preserving caller transforms.
+Reduce Motion keeps content unscaled and uses fades with immediate geometry.
 Closing the overlay releases the retained views. Reusing an ID reuses its view:
 keep IDs stable and unique for logical pages; use a new ID for fresh state.
 
@@ -266,9 +270,11 @@ layout is restored. `update(layout:appearance:transition:)` is also available fo
 callers that own their own page routing.
 
 In the example, tap the composer **+**, then **Recent Photos** in the attachment menu. The bundled
-photo grid supports selection, scrolling, Back, and retained state on reopening.
-The example accesses neither the user's photo library nor the network; attribution
-is in `Examples/PHOTO_CREDITS.md`.
+photo grid fills the panel, with bottom floating system glass Back and All Photos /
+Add N buttons, ordered selection badges, and retained selection/scroll on reopening.
+The grid uses bundled fixtures, without requesting Photos access or fetching
+images. All Photos delegates user selection to the system PHPicker after dismissal.
+Fixture attribution is in `Examples/PHOTO_CREDITS.md`.
 
 ## Presentation results and lifecycle
 
@@ -305,3 +311,35 @@ Unchanged snapshots with settled motion skip layout, measurement, corner resolut
 and animation application. Invalidation is coalesced to a frame; `.immediate`
 resolves synchronously. This reduces idle work but does not stop display-link
 callbacks or claim zero idle CPU usage.
+
+### Edge-to-edge content and trigger cooperation
+
+Existing content continues to receive a safe-area-reduced viewport. A UIKit view
+can adopt `OverlayContentSafeArea` to receive the entire panel instead:
+
+```swift
+final class PhotoContent: UIView, OverlayContentSafeArea {
+  func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
+    // Store insets and invalidate layout only when they change.
+    // Extend imagery to bounds; place controls inside the supplied insets.
+  }
+}
+```
+
+The callback contains panel-local additional clearance (currently bottom home
+indicator clearance). It may run on geometry updates; it must not mutate overlay
+layout recursively. `OverlayPages` forwards it only to the active page. Returning
+`false` from `overlayExtendsToEdges` opts back into the normal reduced viewport.
+
+Set `overlay.anchorTransition = .fade` before presenting to fade the existing
+trigger during presentation and restore its captured alpha during dismissal.
+The default `.none` leaves the trigger untouched. Cancellation, replacement and
+controller release restore it too. While opted in, the library owns the trigger's
+alpha for that presentation; the caller retains ownership of its contents and
+geometry. The example enables this on the composer + button.
+
+On iOS 26+, the panel and actual `UIGlassEffect` view use native continuous corner
+curves with the system-resolved bottom radii. Older systems retain the circular
+mask and material fallback. The circular corner hit region routes
+outer corner taps to dismissal; it does not claim pixel-exact native continuous
+curve hit testing. No custom glow or simulated glass is drawn.

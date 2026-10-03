@@ -9,7 +9,9 @@ def exercise(ui, sheet):
         ui.axe('tap', '--label', 'Sheet', '--tap-style', 'physical', '--post-delay', '.7')
         ui.prefix = 'sheet-'
     ui.tap('demo-input')
+    ui.keyboard()
     ui.axe('type', 'dynamic draft')
+    assert ui.element('demo-input')['AXValue'] == 'dynamic draft', 'Initial draft injection failed'
     keyboard = ui.keyboard()
     input_frame = ui.element('demo-input')['frame']
     for adapter in ['UIKit', 'SwiftUI']:

@@ -21,6 +21,8 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   public private(set) var placementState: OverlayPlacementState?
   public var onPlacementChange: ((OverlayPlacementState) -> Void)?
   public var onDismiss: (() -> Void)?
+  public var anchorTransition: OverlayAnchorTransition = .none
+  private var anchorAlpha: CGFloat?
   /// Resolved destination in source-window coordinates, not the animated frame.
   public private(set) var resolvedFrame: CGRect?
   /// Coalesced after layout, useful for RN/native text measurement at the final
@@ -59,6 +61,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
 
   isolated deinit {
     displayLink?.invalidate()
+    restoreAnchor()
     cornerReference.removeFromSuperview()
     surface?.removeFromSuperview()
     shield?.removeFromSuperview()
@@ -86,6 +89,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     guard anchor.window === window else { return .anchorUnavailable }
     generation += 1
     self.anchor = anchor
+    if anchorTransition == .fade { anchorAlpha = anchor.alpha }
     source = window
     expansionTop = nil
     self.layout = layout
@@ -131,6 +135,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     if let allowsKeyboardOverlap { surface?.allowsKeyboardOverlap = allowsKeyboardOverlap }
     if !self.appearance.background.matches(appearance.background) {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
+      if motion.count == 10 { motion[9] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
     self.appearance = appearance
     measurementDirty = true
@@ -141,6 +146,17 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     guard surface != nil, !closing else { return }
     measurementDirty = true
     requestRefresh(transition: transition)
+  }
+
+  func beginPageTransition(_ transition: OverlayTransition) {
+    guard motion.count == 10, !closing else { return }
+    motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0)
+    refreshNeeded = true
+  }
+
+  private func restoreAnchor() {
+    if let anchorAlpha { anchor?.alpha = anchorAlpha }
+    anchorAlpha = nil
   }
 
   func owns(content: UIView) -> Bool { surface?.content === content }
@@ -156,6 +172,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     guard surface != nil, !closing else { return }
     if !self.appearance.background.matches(appearance.background) {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
+      if motion.count == 10 { motion[9] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
     self.appearance = appearance
     requestRefresh(transition: transition)
@@ -211,6 +228,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     (surface?.content as? OverlayPresentationLifecycle)?.overlayDidDismiss()
     surface?.removeFromSuperview()
     shield?.removeFromSuperview()
+    restoreAnchor()
     surface = nil; shield = nil; anchor = nil; source = nil; placement = nil; placementState = nil
     closeCompletions = []
     geometrySnapshot = nil
@@ -227,12 +245,12 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   }
 
   private func values(_ rect: CGRect, radius: CGFloat, alpha: CGFloat, concentric: CGFloat = 0, bottomRadius: CGFloat? = nil) -> [CGFloat] {
-    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius]
+    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius, 1, 1]
   }
 
-  private func settleGeometry() {
-    guard motion.count == 8, target.count == 8 else { return }
-    for index in motion.indices where index != 5 { motion[index] = OverlaySpring(value: target[index]) }
+  private func settleGeometry(includingContent: Bool = true) {
+    guard motion.count == 10, target.count == 10 else { return }
+    for index in motion.indices where index != 5 && (includingContent || (index != 8 && index != 9)) { motion[index] = OverlaySpring(value: target[index]) }
     applyMotion()
   }
 
@@ -244,7 +262,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
         refresh()
       }
     }
-    guard surface != nil, motion.count == 8, target.count == 8 else { return }
+    guard surface != nil, motion.count == 10, target.count == 10 else { return }
     if zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
       lastTick = link.timestamp
       if closing { finishDismiss() }
@@ -252,14 +270,14 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     }
     let elapsed = lastTick == 0 ? link.duration : min(0.1, link.timestamp - lastTick)
     lastTick = link.timestamp
-    if UIAccessibility.isReduceMotionEnabled && !closing { settleGeometry() }
+    if UIAccessibility.isReduceMotionEnabled && !closing { settleGeometry(includingContent: false) }
     for index in motion.indices { motion[index].advance(to: target[index], elapsed: elapsed) }
     applyMotion()
     if closing && zip(motion, target).allSatisfy({ $0.value == $1 }) { finishDismiss() }
   }
 
   private func applyMotion() {
-    guard let view = surface, motion.count == 8 else { return }
+    guard let view = surface, motion.count == 10 else { return }
     let rect = CGRect(x: motion[0].value, y: motion[1].value,
                       width: max(0, motion[2].value), height: max(0, motion[3].value))
     // No Core Animation geometry interpolation: visible and hit-test bounds are
@@ -274,8 +292,15 @@ public enum OverlayDismissalResult: Equatable, Sendable {
         radii.bottomRight += (right - radii.bottomRight) * weight
       }
       view.panel.setRadii(radii.clamped(to: rect.size))
-      view.panel.alpha = min(1, max(0, motion[5].value))
+      let presence = min(1, max(0, motion[5].value))
+      view.panel.alpha = overlayBlend(presence, from: 0, to: 0.18)
       view.panel.layoutIfNeeded()
+      view.panel.renderContent(presence: presence, progress: motion[8].value,
+                               backgroundProgress: motion[9].value,
+                               reducingMotion: UIAccessibility.isReduceMotionEnabled)
+      if let anchorAlpha {
+        anchor?.alpha = anchorAlpha * (1 - overlayBlend(presence, from: 0, to: 0.25))
+      }
     }
   }
 
@@ -440,7 +465,10 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     }
     // The background reaches the window edge, but controls stay above the home
     // indicator. Content keeps its destination allocation throughout animation.
-    view.panel.contentSize = CGSize(width: rect.width, height: max(0, rect.height - clearance))
+    let contentInsets = view.content as? OverlayContentSafeArea
+    let extends = contentInsets?.overlayExtendsToEdges == true
+    contentInsets?.overlaySafeAreaInsetsDidChange(UIEdgeInsets(top: 0, left: 0, bottom: clearance, right: 0))
+    view.panel.contentSize = CGSize(width: rect.width, height: max(0, rect.height - (extends ? 0 : clearance)))
     var topRadius: CGFloat
     var bottomRadius: CGFloat
     var concentric: CGFloat = 0
@@ -517,10 +545,12 @@ public enum OverlayDismissalResult: Equatable, Sendable {
 
 @MainActor private final class OverlayPanel: UIView {
   private let content: UIView
+  private let contentContainer = UIView()
   var contentSize: CGSize = .zero {
     didSet { if oldValue != contentSize { setNeedsLayout() } }
   }
   private var backdrop: UIView?
+  private var fadingBackdrops: [(view: UIView, alpha: CGFloat)] = []
   private(set) var radii = OverlayRadii(top: 0, bottomLeft: 0, bottomRight: 0)
   private let shapeMask = CAShapeLayer()
   private var appliedRadii: OverlayRadii?
@@ -529,10 +559,12 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     self.content = content
     super.init(frame: .zero)
     clipsToBounds = true
-    layer.cornerCurve = .circular
+    layer.cornerCurve = .continuous
     accessibilityIdentifier = "anchored-overlay-panel"
     setBackground(background)
-    addSubview(content)
+    addSubview(contentContainer)
+    contentContainer.layer.anchorPoint = .zero
+    contentContainer.addSubview(content)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   func setBackground(_ background: OverlayAppearance.Background, animated: Bool = false) {
@@ -553,16 +585,18 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     case .custom(let make): view = make()
     }
     view.isUserInteractionEnabled = false
-    view.layer.cornerCurve = .circular
+    view.layer.cornerCurve = .continuous
     insertSubview(view, at: 0)
     backdrop = view
     if animated, let previous {
+      fadingBackdrops = fadingBackdrops.map { ($0.view, $0.view.alpha) }
+      fadingBackdrops.append((previous, previous.alpha))
       view.alpha = 0
-      UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
-        view.alpha = 1
-        previous.alpha = 0
-      } completion: { _ in previous.removeFromSuperview() }
-    } else { previous?.removeFromSuperview() }
+    } else {
+      previous?.removeFromSuperview()
+      for entry in fadingBackdrops { entry.view.removeFromSuperview() }
+      fadingBackdrops.removeAll()
+    }
     appliedRadii = nil
     setNeedsLayout()
   }
@@ -577,6 +611,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
         bottomLeftRadius: .fixed(radii.bottomLeft), bottomRightRadius: .fixed(radii.bottomRight))
       cornerConfiguration = configuration
       backdrop?.cornerConfiguration = configuration
+      for entry in fadingBackdrops { entry.view.cornerConfiguration = configuration }
     } else {
       shapeMask.frame = bounds
       shapeMask.path = radii.path(in: bounds).cgPath
@@ -586,9 +621,37 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   override func layoutSubviews() {
     super.layoutSubviews()
     backdrop?.frame = bounds
+    for entry in fadingBackdrops { entry.view.frame = bounds }
     setRadii(radii)
-    // Lay out at the destination width, then reveal through the animated clip.
-    // Do not squeeze required-height rows or rescale text during open/close.
+    // Fixed destination allocation preserves fitting, text wrapping and scroll
+    // offsets. Only the presentation wrapper scales; never mutate caller transforms.
+    contentContainer.bounds = CGRect(origin: .zero, size: contentSize)
+    contentContainer.layer.position = .zero
     content.frame = CGRect(origin: .zero, size: contentSize)
   }
+  func renderContent(presence: CGFloat, progress: CGFloat, backgroundProgress: CGFloat, reducingMotion: Bool) {
+    content.layoutIfNeeded()
+    if !fadingBackdrops.isEmpty {
+      let blend = overlayBlend(backgroundProgress, from: 0, to: 1)
+      backdrop?.alpha = blend
+      for entry in fadingBackdrops { entry.view.alpha = entry.alpha * (1 - blend) }
+      if blend == 1 {
+        for entry in fadingBackdrops { entry.view.removeFromSuperview() }
+        fadingBackdrops.removeAll()
+      }
+    }
+    contentContainer.alpha = overlayBlend(presence, from: 0.12, to: 0.65)
+    if let pages = content as? OverlayContentTransition {
+      contentContainer.transform = .identity
+      pages.overlayTransition(progress: progress, visibleSize: bounds.size, reducingMotion: reducingMotion)
+    } else {
+      var scale: CGFloat = 1
+      if !reducingMotion, contentSize.width > 0, contentSize.height > 0 {
+        scale = bounds.width / contentSize.width
+        if presence < 0.999 { scale = min(scale, bounds.height / contentSize.height) }
+      }
+      contentContainer.transform = CGAffineTransform(scaleX: max(0.001, scale), y: max(0.001, scale))
+    }
+  }
+
 }

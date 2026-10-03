@@ -5,7 +5,10 @@ import UIKit
 @MainActor final class RecentPhotosDemo {
   private let pages: OverlayPages
   private var onSelect: ((String) -> Void)?
-  init(controller: AnchoredOverlayController) { pages = OverlayPages(controller: controller) }
+  init(controller: AnchoredOverlayController) {
+    controller.anchorTransition = .fade
+    pages = OverlayPages(controller: controller)
+  }
 
   func present(from anchor: UIView, allowsKeyboardOverlap: Bool, onSelect: @escaping (String) -> Void) {
     self.onSelect = onSelect
@@ -39,30 +42,40 @@ import UIKit
     pages.push(OverlayPage(id: "recent-photos",
       layout: .expandingToBottom(inset: 12),
       appearance: OverlayAppearance(corners: .bottomConcentric())) { [weak self] in
-        PhotoGrid(back: { [weak self] in self?.pages.back() }, close: { [weak self] in self?.onSelect?("Recent Photos") })
+        PhotoGrid(back: { [weak self] in self?.pages.back() },
+          close: { [weak self] in self?.onSelect?("Recent Photos") },
+          library: { [weak self] in self?.onSelect?("Photo Library") })
       })
   }
 }
 
-@MainActor private final class PhotoGrid: UIView {
+@MainActor private final class PhotoGrid: UIView, OverlayContentSafeArea {
   private let scroll = UIScrollView()
   private let grid = UIView()
   private let back = UIButton(type: .system)
   private let done = UIButton(type: .system)
   private var tiles: [UIButton] = []
-  private var selected: Set<Int> = []
+  private var badges: [UILabel] = []
+  private var selected: [Int] = []
+  private var bottomInset: CGFloat = 0
   private let ids = [10, 15, 29, 54, 58, 76, 82, 106]
 
-  init(back onBack: @escaping () -> Void, close: @escaping () -> Void) {
+  init(back onBack: @escaping () -> Void, close: @escaping () -> Void,
+       library: @escaping () -> Void) {
     super.init(frame: .zero)
-    back.setTitle("Back", for: .normal)
-    back.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+    back.configuration = Self.buttonConfiguration()
+    back.configuration?.image = UIImage(systemName: "chevron.left")
+    back.accessibilityLabel = "Back"
     back.accessibilityIdentifier = "photos-back"
     back.addAction(UIAction { _ in onBack() }, for: .touchUpInside)
-    done.setTitle("Done · 0 selected", for: .normal)
+    done.configuration = Self.buttonConfiguration()
     done.accessibilityIdentifier = "photos-done"
-    done.addAction(UIAction { _ in close() }, for: .touchUpInside)
+    done.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      if self.selected.isEmpty { library() } else { close() }
+    }, for: .touchUpInside)
     scroll.keyboardDismissMode = .none
+    scroll.contentInsetAdjustmentBehavior = .never
     scroll.accessibilityIdentifier = "photos-grid"
     scroll.addSubview(grid)
     addSubview(scroll); addSubview(back); addSubview(done)
@@ -74,32 +87,78 @@ import UIKit
       tile.clipsToBounds = true
       tile.accessibilityLabel = "Sample photo \(index + 1)"
       tile.accessibilityIdentifier = "photo-\(index)"
-      tile.addAction(UIAction { [weak self, weak tile] _ in
-        guard let self, let tile else { return }
-        if self.selected.contains(index) { self.selected.remove(index) }
-        else { self.selected.insert(index) }
-        let selected = self.selected.contains(index)
-        tile.layer.borderWidth = selected ? 4 : 0
-        tile.layer.borderColor = UIColor.systemBlue.cgColor
-        tile.setImage(selected ? UIImage(systemName: "checkmark.circle.fill") : nil, for: .normal)
-        tile.accessibilityValue = selected ? "Selected" : "Not selected"
-        self.done.setTitle("Done · \(self.selected.count) selected", for: .normal)
+      let badge = UILabel()
+      badge.backgroundColor = .systemBlue
+      badge.textColor = .white
+      badge.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+      badge.textAlignment = .center
+      badge.layer.cornerRadius = 12
+      badge.clipsToBounds = true
+      badge.isAccessibilityElement = false
+      badge.isUserInteractionEnabled = false
+      tile.addSubview(badge)
+      tile.addAction(UIAction { [weak self] _ in
+        guard let self else { return }
+        if let position = self.selected.firstIndex(of: index) { self.selected.remove(at: position) }
+        else { self.selected.append(index) }
+        self.updateSelection()
       }, for: .touchUpInside)
-      grid.addSubview(tile); tiles.append(tile)
+      grid.addSubview(tile); tiles.append(tile); badges.append(badge)
     }
+    updateSelection()
   }
   required init?(coder: NSCoder) { fatalError() }
+
+  private static func buttonConfiguration() -> UIButton.Configuration {
+    var configuration: UIButton.Configuration
+    if #available(iOS 26.0, *) { configuration = .glass() }
+    else { configuration = .gray() }
+    configuration.cornerStyle = .capsule
+    configuration.baseForegroundColor = .label
+    configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+    return configuration
+  }
+
+  private func updateSelection() {
+    for (index, tile) in tiles.enumerated() {
+      let position = selected.firstIndex(of: index)
+      badges[index].isHidden = position == nil
+      if let position {
+        badges[index].text = String(position + 1)
+        tile.accessibilityValue = "Selected \(position + 1)"
+        tile.accessibilityTraits.insert(.selected)
+      } else {
+        tile.accessibilityValue = "Not selected"
+        tile.accessibilityTraits.remove(.selected)
+      }
+    }
+    done.configuration?.title = selected.isEmpty ? "All Photos" : "Add \(selected.count)"
+    done.accessibilityValue = "\(selected.count) selected"
+    setNeedsLayout()
+  }
+
+  func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
+    guard bottomInset != insets.bottom else { return }
+    bottomInset = insets.bottom
+    setNeedsLayout()
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
-    back.frame = CGRect(x: 12, y: 0, width: 80, height: 44)
-    done.frame = CGRect(x: max(100, bounds.width - 192), y: 0, width: 180, height: 44)
-    scroll.frame = CGRect(x: 0, y: 44, width: bounds.width, height: max(0, bounds.height - 44))
+    let controlY = max(12, bounds.height - bottomInset - 56)
+    back.frame = CGRect(x: 12, y: controlY, width: 44, height: 44)
+    let buttonWidth = max(100, done.sizeThatFits(CGSize(width: bounds.width - 80, height: 44)).width)
+    done.frame = CGRect(x: bounds.width - 12 - buttonWidth, y: controlY, width: buttonWidth, height: 44)
+    scroll.frame = bounds
+    scroll.contentInset.bottom = bottomInset + 68
+    scroll.verticalScrollIndicatorInsets.bottom = bottomInset + 68
     let side = max(0, (bounds.width - 4) / 3)
-    let height = CGFloat((tiles.count + 2) / 3) * (side + 2)
+    let height = CGFloat((tiles.count + 2) / 3) * (side + 2) - 2
     grid.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
     scroll.contentSize = grid.bounds.size
     for (index, tile) in tiles.enumerated() {
       tile.frame = CGRect(x: CGFloat(index % 3) * (side + 2), y: CGFloat(index / 3) * (side + 2), width: side, height: side)
+      badges[index].frame = CGRect(x: max(0, side - 30), y: 6, width: 24, height: 24)
     }
   }
 }

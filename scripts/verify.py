@@ -151,6 +151,7 @@ def exercise(ui, sheet):
     ui.axe('tap', '-x', str(row['x'] + row['width'] / 2), '-y', str(overlap_y), '--tap-style', 'physical', '--post-delay', '.4')
     ui.element('photos-grid')
     ui.capture('recent-photos-grid')
+    ui.tap('photo-0')
     ui.tap('photos-done')
     ui.no_menu()
     assert 'Recent Photos · calls 1 · released true' in ui.element('demo-status')['AXLabel']
@@ -188,7 +189,13 @@ def exercise(ui, sheet):
         ui.tap('demo-plus')
         ui.element('menu-' + action)
         time.sleep(.5)
-        ui.tap('menu-' + action)
+        if action == 'Photo Library':
+            ui.tap('menu-Recent Photos')
+            assert ui.element('photos-done')['AXLabel'] == 'All Photos'
+            ui.capture('all-photos-entry')
+            ui.tap('photos-done')
+        else:
+            ui.tap('menu-' + action)
         ui.no_menu()
         if action == 'Files':
             ui.wait(lambda items: any(i.get('AXLabel') == 'Cancel' for i in items), 'Files picker missing')

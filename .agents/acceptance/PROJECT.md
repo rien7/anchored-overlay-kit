@@ -92,3 +92,21 @@ Lifecycle and reactive pages:
   close video capture; killing a parent shell can orphan simctl recordVideo.
 - Wait for the initial demo input to enter the accessibility tree before tapping
   the Sheet entry; recording readiness does not imply app UI readiness.
+
+Coordinated content motion:
+- Pages now use the controller's display-link clock for scale/opacity; material
+  changes have a separate progress channel on that clock so they cannot restart
+  an in-flight page transition. Capture transition video, not just settled frames.
+- The Recent Photos fixture fills the panel. Its Back and All Photos / Add N
+  buttons float at the bottom; compare the `photos-grid` top with the menu top,
+  not the Back button. Selection order is exposed as each tile's accessibility
+  value. The CTA keeps its stable `photos-done` identifier in both states.
+- Baseline hands off through Recent Photos → All Photos to exercise the new CTA
+  against the actual PHPicker and its delegate return, rather than inferring
+  delivery solely from the attachment action count.
+- Reliability enables optional trigger fading and checks original alpha restoration
+  after normal close, cancellation and owner release. The example never replaces
+  the consuming application's trigger view.
+- Every scenario waits for the software keyboard before AXe text injection and
+  checks the initial draft immediately. A malformed injected draft must fail at
+  setup, not be diagnosed later as an overlay action leaking into the keyboard.

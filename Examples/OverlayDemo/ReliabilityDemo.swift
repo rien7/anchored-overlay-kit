@@ -17,17 +17,22 @@ import UIKit
   func run(anchor: UIView, report: @escaping (String) -> Void) {
     Task { @MainActor [self, anchor] in
       failures = []
+      let originalAlpha = anchor.alpha
+      controller.anchorTransition = .fade
       let missing = UIView()
       check(pages.present(page("missing"), anchoredTo: missing, dismissLabel: "Close") == .anchorUnavailable, "missing-result")
       check(pages.pageID == nil && !controller.isPresented, "missing-state")
       check(pages.present(page("first"), anchoredTo: anchor, dismissLabel: "Close") == .presented, "present")
       check(pages.present(page("invalid"), anchoredTo: missing, dismissLabel: "Close") == .anchorUnavailable, "invalid-result")
       check(pages.pageID == "first" && controller.isPresented, "invalid-replaced-existing")
+      try? await Task.sleep(for: .milliseconds(500))
+      check(anchor.alpha == 0, "anchor-fades-while-presented")
       var results: [OverlayDismissalResult] = []
       controller.dismissWithResult { results.append($0) }
       controller.dismissWithResult { results.append($0) }
       try? await Task.sleep(for: .milliseconds(900))
       check(results == [.dismissed, .dismissed], "joined-close")
+      check(anchor.alpha == originalAlpha, "anchor-restored-after-close")
       check(pages.pageID == nil && !controller.isPresented, "closed-state")
       pages.present(page("old"), anchoredTo: anchor, dismissLabel: "Close")
       results = []
@@ -49,12 +54,15 @@ import UIKit
       controller.dismissWithResult { cancelled = $0 }
       controller.cancel()
       check(cancelled == .cancelled, "owner-cancellation")
+      check(anchor.alpha == originalAlpha, "anchor-restored-after-cancel")
       var released: OverlayDismissalResult?
       var temporary: AnchoredOverlayController? = AnchoredOverlayController()
+      temporary?.anchorTransition = .fade
       temporary?.present(content: UILabel(), anchoredTo: anchor, layout: compact, dismissLabel: "Close")
       temporary?.dismissWithResult { released = $0 }
       temporary = nil
       check(released == .cancelled, "released-owner-cancellation")
+      check(anchor.alpha == originalAlpha, "anchor-restored-after-release")
       pages.present(page("reentrant-old"), anchoredTo: anchor, dismissLabel: "Close")
       controller.onDismiss = { [weak self, weak anchor] in
         guard let self, let anchor else { return }
