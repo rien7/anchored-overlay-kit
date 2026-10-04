@@ -227,7 +227,7 @@ with `ruby scripts/generate-example.rb` only when its project structure changes
 (requires the `xcodeproj` Ruby gem). The host-only keyboard helper is never linked
 into the library or app.
 
-License: AGPL-3.0-only. See [LICENSE](LICENSE).
+License: MIT. See [LICENSE](LICENSE).
 
 Coordinate handling follows Apple's [keyboard frame notification documentation](https://developer.apple.com/documentation/uikit/uiresponder/keyboardwillchangeframenotification):
 keyboard rectangles are expressed in screen coordinates and must be converted
