@@ -22,11 +22,15 @@ These recordings show the library integrated into [**Lody iOS**](https://github.
 
 **Photos:** expand from the menu, change grid layout, select photos and animate them into the draft.
 
-https://github.com/user-attachments/assets/e3288620-ad88-46c9-ae85-749ba4e518ba
+[![Animated photo menu preview — watch the full video](https://raw.githubusercontent.com/rien7/anchored-overlay-kit/main/docs/media/photos-preview.gif)](https://github.com/user-attachments/assets/e3288620-ad88-46c9-ae85-749ba4e518ba)
+
+[▶ Watch the full video](https://github.com/user-attachments/assets/e3288620-ad88-46c9-ae85-749ba4e518ba)
 
 **Camera:** expand the viewfinder, retry a capture and add it to the draft.
 
-https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec
+[![Animated camera preview — watch the full video](https://raw.githubusercontent.com/rien7/anchored-overlay-kit/main/docs/media/camera-preview.gif)](https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec)
+
+[▶ Watch the full video](https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec)
 
 Recorded on the iOS 26.4 Simulator at Lody commit `3b582f0`; playback is 1.5×. The camera uses a deterministic fixture, not a physical camera feed.
 

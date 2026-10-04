@@ -22,11 +22,15 @@ AnchoredOverlayKit 是面向 iOS 的 UIKit / SwiftUI 库，负责弹层的位置
 
 **照片：** 从菜单展开网格、切换布局、选择照片，再动画添加到草稿。
 
-https://github.com/user-attachments/assets/e3288620-ad88-46c9-ae85-749ba4e518ba
+[![照片菜单动态预览：点击观看完整视频](https://raw.githubusercontent.com/rien7/anchored-overlay-kit/main/docs/media/photos-preview.gif)](https://github.com/user-attachments/assets/e3288620-ad88-46c9-ae85-749ba4e518ba)
+
+[▶ 观看完整视频](https://github.com/user-attachments/assets/e3288620-ad88-46c9-ae85-749ba4e518ba)
 
 **相机：** 展开取景器、重新拍摄、将照片添加到草稿。
 
-https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec
+[![相机展开动态预览：点击观看完整视频](https://raw.githubusercontent.com/rien7/anchored-overlay-kit/main/docs/media/camera-preview.gif)](https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec)
+
+[▶ 观看完整视频](https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec)
 
 录制环境为 iOS 26.4 模拟器，Lody 提交 `3b582f0`，视频以 1.5 倍速播放。相机使用固定测试画面，不是真机摄像头画面。
 
