@@ -16,6 +16,8 @@
     "Sources/AnchoredOverlayKit/**/*.swift",
     "AnchoredOverlayKit.podspec",
     "Package.swift",
+    "README.zh-CN.md",
+    "docs/*.md",
     "INTEGRATION.md",
     "PUBLISHING.md",
     "LICENSE"

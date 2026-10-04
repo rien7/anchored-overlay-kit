@@ -26,7 +26,8 @@ def main():
     HOST.mkdir(exist_ok=True)
     packed = json.loads(run(['npm', 'pack', '--json', '--pack-destination', str(OUT)], log='pack.json'))[0]
     allowed = {'package.json', 'Package.swift', 'AnchoredOverlayKit.podspec',
-               'README.md', 'INTEGRATION.md', 'PUBLISHING.md', 'LICENSE'}
+               'README.md', 'README.zh-CN.md', 'docs/API.md', 'docs/API.zh-CN.md',
+               'INTEGRATION.md', 'PUBLISHING.md', 'LICENSE'}
     paths = {entry['path'] for entry in packed['files']}
     unexpected = {p for p in paths if p not in allowed and not
                   (p.startswith('Sources/AnchoredOverlayKit/') and p.endswith('.swift'))}
