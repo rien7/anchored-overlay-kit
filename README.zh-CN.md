@@ -18,7 +18,7 @@ AnchoredOverlayKit 是面向 iOS 的 UIKit / SwiftUI 库，负责弹层的位置
 
 ## 效果视频
 
-以下是 **Lody** 接入本库后的演示。照片加载、选择、相机拍摄和编辑器附件属于应用业务，并非库内置组件。
+以下是 [**Lody iOS**](https://github.com/Innei/lody-ios)（[Lody](https://github.com/LodyAI/Lody)） 接入本库后的演示。照片加载、选择、相机拍摄和编辑器附件属于应用业务，并非库内置组件。
 
 **照片：** 从菜单展开网格、切换布局、选择照片，再动画添加到草稿。
 
@@ -40,10 +40,10 @@ https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec
 https://github.com/rien7/anchored-overlay-kit.git
 ```
 
-选择 **0.1.3** 或更新版本，将 **AnchoredOverlayKit** 产品加入应用 target。使用 Package.swift 时添加：
+选择 **0.1.4** 或更新版本，将 **AnchoredOverlayKit** 产品加入应用 target。使用 Package.swift 时添加：
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.1.3")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.1.4")
 ```
 
 并在使用方 target 的 dependencies 中加入 `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")`。

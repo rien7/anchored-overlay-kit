@@ -18,7 +18,7 @@ AnchoredOverlayKit is a small UIKit and SwiftUI library for iOS. It handles plac
 
 ## See it in use
 
-These recordings show the library integrated into **Lody**. Photo loading, selection, camera capture and editor attachments are app features, not bundled components.
+These recordings show the library integrated into [**Lody iOS**](https://github.com/Innei/lody-ios) ([Lody](https://github.com/LodyAI/Lody)). Photo loading, selection, camera capture and editor attachments are app features, not bundled components.
 
 **Photos:** expand from the menu, change grid layout, select photos and animate them into the draft.
 
@@ -40,10 +40,10 @@ In Xcode, choose **File → Add Package Dependencies** and enter:
 https://github.com/rien7/anchored-overlay-kit.git
 ```
 
-Select version **0.1.3** or later and add the **AnchoredOverlayKit** product to your app target. For a package manifest:
+Select version **0.1.4** or later and add the **AnchoredOverlayKit** product to your app target. For a package manifest:
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.1.3")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.1.4")
 ```
 
 Add `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")` to the consuming target’s dependencies.
