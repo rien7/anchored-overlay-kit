@@ -97,14 +97,11 @@ permission prompts, uploads, focus restoration after those pickers, and draft
 ownership remain in the app. Existing chat/sheet keyboard-avoidance layouts do
 not need to change: overlay geometry never enters composer measurement.
 
-For system permission requests, first call `dismissWithResult` and proceed only
-on `.dismissed`. Keep the pending operation in the editor owner, not in overlay
-content: scene deactivation cancels presentations and releases retained pages.
-After the system completion and source-scene reactivation, validate that the
-original owner/anchor is still visible, read the current permission status and
-present fresh content. Invalidate that pending operation on navigation/teardown;
-never reopen an obsolete editor. Settings handoffs must also wait for the app to
-return, because `UIApplication.open` completion only confirms that Settings opened.
+For system permission requests or a Settings handoff, use
+`performExternalInteraction(from:interaction:isValid:operation:resume:)`.
+The library dismisses first, rejects stale callbacks, and resumes only in the
+original active scene. The app still owns the permission operation and decides
+which page to recreate. See the continuation example below.
 
 The package reconciles restored keyboard ownership from the source root view's
 keyboard layout guide and an unambiguous local first responder. It also repairs
@@ -243,8 +240,8 @@ page receives `overlayPageActivityDidChange(isActive: true)` after successful
 presentation or when pushed/restored. It receives `false` when another page is
 selected or the presentation is removed (including cancellation). A retained
 hidden page is inactive: stop camera sessions, playback and subscriptions there.
-The content factory itself is not an activation event. Permission continuations
-must remain with the app's presentation owner because dismissal releases pages.
+The content factory itself is not an activation event. The app owns permission operations and the page to recreate; use
+`performExternalInteraction` to coordinate restoration because dismissal releases pages.
 
 The overlay retains a UIKit controller for its own surface. This preserves the
 responder chain when content is hosted over the keyboard, so controls such as
@@ -258,8 +255,9 @@ After your app accepts an item, use `controller.dismiss(to:representation:corner
 to close the current panel into a mounted destination UIView. Supply a detached
 representation (for example, an aspect-fill UIImageView). Its bounds follow the
 panel; normal page lifecycle and dismissal cancellation semantics still apply.
-Commit business state before this call, and restore any temporarily hidden
-destination in completion for every result, including cancellation. A nil or
+Commit business state before this call, and pass `destinationVisibility: .hideDuringTransition` to hide the destination
+until cleanup. The library restores its prior alpha before every completion,
+including cancellation and replacement; `.unchanged` remains the default. A nil or
 offscreen destination and Reduce Motion use an in-place fade. Target and source
 must belong to the same window scene. The destination is weakly held and tracked
 through layout changes until completion; removal switches to a fade. This API
@@ -288,3 +286,49 @@ Controls fade out before body replacement and appear after incoming content.
 Outgoing and incoming bodies use disjoint opacity ranges to avoid ghosted menus.
 Reduced Motion settles spatial geometry and retains only the opacity transition.
 Business state and resource lifetime remain governed by `OverlayPageActivity`.
+
+
+### External interactions
+
+```swift
+controller.performExternalInteraction(
+  from: presenter,
+  interaction: .leavingApp, // .inApp for a permission prompt or system sheet
+  isValid: { [weak owner] in owner?.canEdit == true },
+  operation: { _, complete in
+    // Invoke your system API only here, after overlay cleanup.
+    UIApplication.shared.open(settingsURL) { opened in
+      Task { @MainActor in complete(opened) }
+    }
+  },
+  resume: { [weak owner] in owner?.showPhotosPage() }
+)
+```
+
+The controller retains the continuation, not the dismissed views. Completion is
+one-shot; `.leavingApp` also waits for source-scene reactivation. Pass `false` if
+opening the external app failed. Cancellation, a new presentation, owner/window
+loss, or scene disconnection invalidate restoration. Ordinary backgrounding
+cancels `.inApp`; `.leavingApp` survives until return. The app must still call
+`cancel()` on owner teardown and capture its owner weakly. No photo/camera resource
+or permission state is retained by the library. Calls return `false` when there
+is no valid presentation or another external operation is pending.
+
+### Optional UIKit content
+
+- `OverlayMenuContent(items:metrics:accentColor:)` renders localized caller-owned
+  actions. Each item supplies a title, SF Symbol, optional accessibility identifier,
+  selected/enabled state and action. It adds no navigation or media behavior.
+- `OverlayControlMetrics` defaults to 40pt visual controls, 44pt minimum hit area,
+  16pt symbols and 56pt menu rows. Menu side inset is `menuRadius - diameter / 2`;
+  vertical inset is `menuRadius - rowHeight / 2`. Pass the same `menuRadius` to
+  the page appearance. These formulas align the first/last icon and outer corners.
+- `OverlayActionButton` supports `.neutral` and `.emphasized`, `accentColor` and
+  `horizontalPadding`. Changing style preserves its title, image and loading state.
+  iOS 26+ uses native glass; older systems use a native filled configuration.
+- `OverlayActionBar` is a full-viewport `overlayChrome`. It arranges leading and
+  trailing controls with an optional custom center control (e.g. a shutter).
+  Pass safe-area updates to `safeAreaClearance`; use `contentBottomInset` for
+  scroll-content avoidance. `controlsGuide` anchors extra controls above the row.
+  Visual bounds and parent hit bounds are separate. Keep app-specific camera
+  tools, capture behavior and collection views in the application.

@@ -50,27 +50,25 @@ import UIKit
 }
 
 @MainActor private final class PhotoGrid: UIView, OverlayContentSafeArea, OverlayPageChrome {
-  let overlayChrome = UIView()
-  private var controlBottom: NSLayoutConstraint!
+  var overlayChrome: UIView { actionBar }
+  private lazy var actionBar = OverlayActionBar(leading: back, trailing: done)
   private let scroll = UIScrollView()
   private let grid = UIView()
-  private let back = UIButton(type: .system)
-  private let done = UIButton(type: .system)
+  private let back = OverlayActionButton()
+  private let done = OverlayActionButton()
   private var tiles: [UIButton] = []
   private var badges: [UILabel] = []
   private var selected: [Int] = []
-  private var bottomInset: CGFloat = 0
   private let ids = [10, 15, 29, 54, 58, 76, 82, 106]
 
   init(back onBack: @escaping () -> Void, close: @escaping () -> Void,
        library: @escaping () -> Void) {
     super.init(frame: .zero)
-    back.configuration = Self.buttonConfiguration()
     back.configuration?.image = UIImage(systemName: "chevron.left")
     back.accessibilityLabel = "Back"
     back.accessibilityIdentifier = "photos-back"
     back.addAction(UIAction { _ in onBack() }, for: .touchUpInside)
-    done.configuration = Self.buttonConfiguration()
+    done.horizontalPadding = 20
     done.accessibilityIdentifier = "photos-done"
     done.addAction(UIAction { [weak self] _ in
       guard let self else { return }
@@ -81,17 +79,6 @@ import UIKit
     scroll.accessibilityIdentifier = "photos-grid"
     scroll.addSubview(grid)
     addSubview(scroll)
-    overlayChrome.addSubview(back); overlayChrome.addSubview(done)
-    back.translatesAutoresizingMaskIntoConstraints = false
-    done.translatesAutoresizingMaskIntoConstraints = false
-    controlBottom = back.bottomAnchor.constraint(equalTo: overlayChrome.bottomAnchor, constant: -12)
-    NSLayoutConstraint.activate([
-      back.leadingAnchor.constraint(equalTo: overlayChrome.leadingAnchor, constant: 12),
-      back.widthAnchor.constraint(equalToConstant: 44), back.heightAnchor.constraint(equalToConstant: 44),
-      controlBottom, done.centerYAnchor.constraint(equalTo: back.centerYAnchor),
-      done.trailingAnchor.constraint(equalTo: overlayChrome.trailingAnchor, constant: -12),
-      done.widthAnchor.constraint(greaterThanOrEqualToConstant: 100), done.heightAnchor.constraint(equalToConstant: 44)
-    ])
     for index in 0..<32 {
       let tile = UIButton(type: .custom)
       if let path = Bundle.main.path(forResource: "photo-\(ids[index % ids.count])", ofType: "jpg", inDirectory: "Photos") {
@@ -122,16 +109,6 @@ import UIKit
   }
   required init?(coder: NSCoder) { fatalError() }
 
-  private static func buttonConfiguration() -> UIButton.Configuration {
-    var configuration: UIButton.Configuration
-    if #available(iOS 26.0, *) { configuration = .glass() }
-    else { configuration = .gray() }
-    configuration.cornerStyle = .capsule
-    configuration.baseForegroundColor = .label
-    configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
-    return configuration
-  }
-
   private func updateSelection() {
     for (index, tile) in tiles.enumerated() {
       let position = selected.firstIndex(of: index)
@@ -145,23 +122,22 @@ import UIKit
         tile.accessibilityTraits.remove(.selected)
       }
     }
+    done.actionStyle = selected.isEmpty ? .neutral : .emphasized
     done.configuration?.title = selected.isEmpty ? "All Photos" : "Add \(selected.count)"
     done.accessibilityValue = "\(selected.count) selected"
     setNeedsLayout()
   }
 
   func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
-    guard bottomInset != insets.bottom else { return }
-    bottomInset = insets.bottom
-    controlBottom.constant = -12 - bottomInset
+    actionBar.safeAreaClearance = insets
     setNeedsLayout()
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
     scroll.frame = bounds
-    scroll.contentInset.bottom = bottomInset + 68
-    scroll.verticalScrollIndicatorInsets.bottom = bottomInset + 68
+    scroll.contentInset.bottom = actionBar.contentBottomInset
+    scroll.verticalScrollIndicatorInsets.bottom = actionBar.contentBottomInset
     let side = max(0, (bounds.width - 4) / 3)
     let height = CGFloat((tiles.count + 2) / 3) * (side + 2) - 2
     grid.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)

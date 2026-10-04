@@ -13,6 +13,8 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   case dismissed, superseded, cancelled, notPresented
 }
 
+public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringTransition }
+
 /// A scene-bound transient surface. The caller owns content and business actions.
 /// Initialize before editing begins so keyboard-window notifications are observed.
 @MainActor public final class AnchoredOverlayController: NSObject {
@@ -54,6 +56,8 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   private weak var closingDestination: UIView?
   private var followsClosingDestination = false
   private var closingCornerRadius: CGFloat = 8
+  private var restoreDestination: (() -> Void)?
+  private var continuation: OverlayContinuation?
   private var generation = 0
   private let host = KeyboardOverlayHost.shared
 
@@ -64,6 +68,8 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   }
 
   isolated deinit {
+    continuation?.cancel()
+    restoreDestination?()
     displayLink?.invalidate()
     restoreAnchor()
     cornerReference.removeFromSuperview()
@@ -87,6 +93,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   @discardableResult public func present(content: UIView, anchoredTo anchor: UIView, layout: OverlayLayout,
                       appearance: OverlayAppearance = .standard,
                       dismissLabel: String, allowsKeyboardOverlap: Bool = true) -> OverlayPresentationResult {
+    continuation?.cancel()
     guard let window = anchor.window, !window.isHidden, !anchor.isHidden else { return .anchorUnavailable }
     guard window.windowScene?.activationState == .foregroundActive else { return .inactiveScene }
     let expectedGeneration = generation + (surface != nil && !closing ? 1 : 0)
@@ -189,6 +196,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   /// Runs after cleanup unless a newer presentation supersedes this dismissal.
   /// Repeated calls join the same close operation. Use dismissWithResult to observe cancellation.
   public func dismiss(animated: Bool = true, completion: (() -> Void)? = nil) {
+    continuation?.cancel()
     dismissWithResult(animated: animated) { result in
       if result == .dismissed || result == .notPresented { completion?() }
     }
@@ -196,6 +204,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
 
   public func dismissWithResult(animated: Bool = true,
                                 completion: @escaping (OverlayDismissalResult) -> Void) {
+    continuation?.cancel()
     dismissWithResult(animated: animated, reason: .dismissed, completion: completion)
   }
 
@@ -206,10 +215,16 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   /// destinations and Reduce Motion use an in-place fade.
   /// Completion follows the same cancellation/replacement rules as dismissWithResult.
   public func dismiss(to destination: UIView?, representation: UIView, cornerRadius: CGFloat = 8,
+                      destinationVisibility: OverlayDestinationVisibility = .unchanged,
                       completion: @escaping (OverlayDismissalResult) -> Void) {
     guard let view = surface, !closing else {
       dismissWithResult(animated: true, completion: completion)
       return
+    }
+    if destinationVisibility == .hideDuringTransition, let destination {
+      let alpha = destination === anchor ? (anchorAlpha ?? destination.alpha) : destination.alpha
+      destination.alpha = 0
+      restoreDestination = { [weak destination] in destination?.alpha = alpha }
     }
     view.panel.setClosingRepresentation(representation)
     view.isUserInteractionEnabled = false
@@ -241,7 +256,37 @@ public enum OverlayDismissalResult: Equatable, Sendable {
   }
 
   /// Owner teardown cancels pending actions and immediately removes both shields.
-  public func cancel() { dismissWithResult(animated: false, reason: .cancelled) }
+  public func cancel() {
+    continuation?.cancel()
+    dismissWithResult(animated: false, reason: .cancelled)
+  }
+
+  /// Dismisses before invoking system UI. Only the original owner/scene may resume.
+  /// Call complete once the operation finishes; false means an external app failed
+  /// to open, so waiting for reactivation is unnecessary. New present/cancel/dismiss
+  /// invalidates the operation. Captures in validate/resume should be weak.
+  @discardableResult public func performExternalInteraction(
+      from presenter: UIViewController, interaction: OverlayExternalInteraction = .inApp,
+      isValid: @escaping () -> Bool, operation: @escaping (UIViewController, @escaping @MainActor (Bool) -> Void) -> Void,
+      resume: @escaping () -> Void) -> Bool {
+    guard continuation == nil, let anchor, let source, !closing,
+          presenter.viewIfLoaded?.window === source else { return false }
+    let request = OverlayContinuation(anchor: anchor, presenter: presenter, interaction: interaction,
+                                      validate: isValid, resume: resume)
+    continuation = request
+    request.onFinish = { [weak self, weak request] in
+      guard let self, self.continuation === request else { return }
+      self.continuation = nil
+    }
+    dismissWithResult(animated: true, reason: .dismissed) { [weak request] result in
+      guard let request else { return }
+      guard result == .dismissed, request.isValid, let presenter = request.presenter else {
+        request.cancel(); return
+      }
+      operation(presenter) { [weak request] expectsReturn in request?.complete(expectsReturn) }
+    }
+    return true
+  }
 
   private func dismissWithResult(animated: Bool, reason: OverlayDismissalResult,
                                  completion: ((OverlayDismissalResult) -> Void)? = nil) {
@@ -281,6 +326,7 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     contentController = nil
     shield?.removeFromSuperview()
     restoreAnchor()
+    restoreDestination?(); restoreDestination = nil
     surface = nil; shield = nil; anchor = nil; source = nil; placement = nil; placementState = nil
     closeCompletions = []
     geometrySnapshot = nil
@@ -382,11 +428,14 @@ public enum OverlayDismissalResult: Equatable, Sendable {
     }
   }
 
-  @objc private func background() { cancel() }
+  @objc private func background() {
+    if continuation?.allowsBackground != true { continuation?.cancel() }
+    dismissWithResult(animated: false, reason: .cancelled)
+  }
 
   @objc private func sceneDeactivated(_ notification: Notification) {
     guard let scene = notification.object as? UIWindowScene, scene === source?.windowScene else { return }
-    cancel()
+    dismissWithResult(animated: false, reason: .cancelled)
   }
 
   private func requestRefresh(transition: OverlayTransition = .spring) {

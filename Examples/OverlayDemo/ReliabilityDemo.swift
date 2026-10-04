@@ -219,6 +219,86 @@ import UIKit
       check(sameSize.superview?.alpha == 1 && viewport.superview?.alpha == 0, "same-size-content-transition")
       check(sameSize.superview?.superview?.superview?.superview === panel, "same-size-surface-identity")
       controller.cancel()
+      if let window = anchor.window, let presenter = window.rootViewController {
+        // Public continuation API: completion timing, stale callbacks, owner validity.
+        for mode in ["complete", "cancel", "replace", "invalid", "open-failed"] {
+          pages.present(page("external-" + mode), anchoredTo: anchor, dismissLabel: "Close")
+          var complete: (@MainActor (Bool) -> Void)?
+          var resumed = 0
+          var valid = true
+          check(controller.performExternalInteraction(from: presenter,
+            interaction: mode == "open-failed" ? .leavingApp : .inApp,
+            isValid: { valid }, operation: { _, callback in
+              self.check(!self.controller.isPresented, "external-dismiss-before-operation")
+              complete = callback
+            }, resume: { resumed += 1 }), "external-start")
+          try? await Task.sleep(for: .milliseconds(900))
+          check(complete != nil, "external-operation-called")
+          if mode == "cancel" { controller.cancel() }
+          if mode == "replace" { pages.present(page("external-winner"), anchoredTo: anchor, dismissLabel: "Close") }
+          if mode == "invalid" { valid = false }
+          complete?(mode != "open-failed")
+          complete?(false)
+          check(resumed == ((mode == "complete" || mode == "open-failed") ? 1 : 0), "external-resume-once-" + mode)
+          if mode == "replace" { check(pages.pageID == "external-winner", "external-preserves-replacement") }
+          controller.cancel()
+        }
+        let target = UIView(frame: CGRect(x: 20, y: 150, width: 40, height: 40))
+        target.alpha = 0.7; window.addSubview(target)
+        let targetAlpha = target.alpha
+        for mode in ["complete", "cancel", "replace"] {
+          pages.present(page("hide-" + mode), anchoredTo: anchor, dismissLabel: "Close")
+          var outcome: OverlayDismissalResult?
+          controller.dismiss(to: target, representation: UIView(), destinationVisibility: .hideDuringTransition) {
+            outcome = $0
+            self.check(target.alpha == targetAlpha, "destination-restored-before-callback")
+          }
+          check(target.alpha == 0, "destination-hidden")
+          if mode == "cancel" { controller.cancel() }
+          if mode == "replace" { pages.present(page("hide-winner"), anchoredTo: anchor, dismissLabel: "Close") }
+          try? await Task.sleep(for: .milliseconds(900))
+          let expected: [String: OverlayDismissalResult] = ["complete": .dismissed, "cancel": .cancelled, "replace": .superseded]
+          check(outcome == expected[mode] && target.alpha == targetAlpha, "destination-visibility-" + mode)
+          controller.cancel()
+        }
+        target.removeFromSuperview()
+        pages.present(page("hide-anchor"), anchoredTo: anchor, dismissLabel: "Close")
+        try? await Task.sleep(for: .milliseconds(500))
+        controller.dismiss(to: anchor, representation: UIView(), destinationVisibility: .hideDuringTransition) { _ in }
+        controller.cancel()
+        check(anchor.alpha == originalAlpha, "destination-anchor-restores-unfaded-alpha")
+        let button = OverlayActionButton()
+        button.configuration?.title = "Add 2 items"
+        button.configuration?.showsActivityIndicator = true
+        button.actionStyle = .emphasized
+        check(button.configuration?.title == "Add 2 items" && button.configuration?.showsActivityIndicator == true,
+              "action-style-preserves-content")
+        let back = OverlayActionButton()
+        let bar = OverlayActionBar(leading: back, trailing: button)
+        bar.frame = CGRect(x: 0, y: 0, width: 360, height: 500)
+        window.addSubview(bar)
+        bar.safeAreaClearance.bottom = 34
+        bar.layoutIfNeeded()
+        check(back.bounds.size == CGSize(width: 40, height: 40), "bar-visual-size")
+        check(back.accessibilityFrame.height == 44, "bar-hit-size")
+        check(bar.contentBottomInset == 90, "bar-content-clearance")
+        check(abs(bar.controlsGuide.layoutFrame.maxY - 466) < 1, "bar-safe-area")
+        button.configuration?.showsActivityIndicator = false
+        button.horizontalPadding = 20
+        button.configuration?.title = "All Photos"
+        bar.layoutIfNeeded()
+        check(button.configuration?.titleLineBreakMode == .byTruncatingTail, "action-single-line-title")
+        check(button.bounds.width >= button.intrinsicContentSize.width - 1, "action-title-fits-width")
+        bar.removeFromSuperview()
+        let narrow = UIView()
+        let custom = OverlayActionBar(leading: OverlayActionButton(), trailing: OverlayActionButton(),
+                                      center: narrow, centerSize: CGSize(width: 20, height: 60))
+        custom.frame = CGRect(x: 0, y: 0, width: 360, height: 500); window.addSubview(custom)
+        custom.layoutIfNeeded()
+        check(narrow.bounds.size == CGSize(width: 20, height: 60), "bar-custom-visual-size")
+        check(narrow.superview?.bounds.size == CGSize(width: 44, height: 60), "bar-independent-hit-dimensions")
+        custom.removeFromSuperview()
+      }
       let message = failures.isEmpty ? "Lifecycle passed" : "Failed: " + failures.joined(separator: ",")
       report(message)
       guard failures.isEmpty else { return }

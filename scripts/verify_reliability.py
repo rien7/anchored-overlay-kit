@@ -12,7 +12,7 @@ def exercise(ui, sheet):
     assert ui.element('demo-input')['AXValue'] == 'reliable draft', 'Initial draft injection failed'
     ui.keyboard()
     ui.tap('demo-reliability')
-    ui.wait(lambda items: any(i.get('AXLabel') == 'Lifecycle passed' for i in items), 'Lifecycle checks failed', timeout=30)
+    ui.wait(lambda items: any(i.get('AXLabel') == 'Lifecycle passed' for i in items), 'Lifecycle checks failed', timeout=60)
     ui.element('reliability-close')
     time.sleep(.8)
     initial = ui.element('reliability-close')['frame']['y'] - ui.element('reliability-count')['frame']['y']
