@@ -54,10 +54,10 @@ In Xcode, choose **File → Add Package Dependencies** and enter:
 https://github.com/rien7/anchored-overlay-kit.git
 ```
 
-Select version **0.2.0** or later and add the **AnchoredOverlayKit** product to your app target. For a package manifest:
+Select version **0.3.0** or later and add the **AnchoredOverlayKit** product to your app target. For a package manifest:
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.2.0")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.3.0")
 ```
 
 Add `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")` to the consuming target’s dependencies.
@@ -78,7 +78,7 @@ package_json = Pod::Executable.execute_command('node', [
 pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-If a native module imports the library, declare `s.dependency 'AnchoredOverlayKit', '~> 0.2.0'` in that module’s podspec too. Run `pod install` and rebuild the native app. Use either CocoaPods or SPM per target.
+If a native module imports the library, declare `s.dependency 'AnchoredOverlayKit', '~> 0.3.0'` in that module’s podspec too. Run `pod install` and rebuild the native app. Use either CocoaPods or SPM per target.
 
 For Expo, persist the extra pod in app configuration before prebuild; see the [Expo integration recipe](INTEGRATION.md#expo-prebuild). Expo Go cannot load this native library.
 
@@ -276,6 +276,13 @@ For a permission prompt or an in-app system picker, choose `.inApp` and invoke `
 Have your page conform to `OverlayPageChrome` and return its own foreground view. `OverlayActionBar` can arrange Back, Add and an optional center shutter. Forward `OverlayContentSafeArea` updates to its `safeAreaClearance`; use `contentBottomInset` to keep scroll content clear.
 
 `OverlayActionButton.actionStyle = .emphasized` applies `accentColor` to a selected action. Menu metrics, all control parameters and lifecycle protocols are in the [complete API reference](docs/API.md#controls-and-content-protocols).
+
+For selection borders touching the panel edge, adopt `OverlayBoundaryHighlighting`
+and return `OverlayBoundaryHighlight(view:clippedTo:color:lineWidth:)` regions.
+The library completes the border along its live rounded boundary, including during
+scrolling and page transitions. Your app keeps selection state and item borders;
+it no longer needs to reconstruct the panel's corners or masks. See
+[boundary highlights](docs/API.md#boundary-highlights).
 
 ## Keyboard compatibility
 

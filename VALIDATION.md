@@ -1,5 +1,19 @@
 # 本地验收记录
 
+## 2026-10-05：面板边界高亮
+
+新增 `OverlayBoundaryHighlighting` / `OverlayBoundaryHighlight`。调用方声明选中区域，库负责共享圆角、坐标映射、视口裁剪、逐帧更新及页面生命周期。照片示例已接入；Lody 已通过 pnpm patch 接入其 0.2.0 依赖并完成 Release 编译和模拟器安装。Lody 的交互回归受模拟器自动化会话超时阻塞，不计入本库下述通过结果。本库发布版本为 0.3.0。
+
+- iPhone 17 Pro / iOS 27 专用模拟器：9/9 XCTest 通过，覆盖选中/取消、复用移除、隐藏/非法输入、滚动视口、圆角区域、仿射变换、内容缩放下的描边宽度、动态颜色、弱引用及非对称底角更新。
+- 真实触摸：浅色聊天页、深色 Sheet 均通过照片选择、取消、滚动、返回状态保留及关闭后继续输入。截图确认圆角处选中边框连续，相邻未选区域无高亮。
+- 合成器截图像素检查：浅色 281、深色 288 个蓝色弧线像素，外角无溢出。原生四角配置无法由 `CALayer.render` 离屏截图完整复现，因此 XCTest 验证原生解析半径，曲线像素使用 simctl 截图验证。
+- 0.3.0 最终 npm tarball 分别经 CocoaPods 和 SPM 正常签名构建通过；发布包包含完整 SwiftPM 测试源。
+- Lody 迁移补丁 `git apply --check` 通过；Python 语法和 `git diff --check` 通过。
+- iOS 16–25 路径回退通过 iOS 16 部署目标编译，未在旧系统运行时验证。没有声称真机、多窗口或所有辅助功能场景已验收。
+
+证据：`.artifacts/boundary-tests/test.log`、`.artifacts/boundary-pages/`、`.artifacts/distribution/`。
+复验：`DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer python3 scripts/verify_boundary.py --keep-simulator`；页面验收使用 `scripts/verify.py --scenario pages --host chat --appearance light --keep-simulator`（或 `--host sheet --appearance dark`）。`--keep-simulator` 保持设备启动，供人工检查。
+
 ## 最新：可靠性修复 1–5
 
 完成重复关闭回调合并与显式取消结果、present 成功后再提交页面状态、共享 SwiftUI 自然尺寸测量、同帧更新合并与静止布局跳过，以及按源窗口归属的键盘状态和保守屏幕匹配。新增 Reliability 示例与真实触摸驱动；接入文档的宿主清理统一使用 `cancel()`。

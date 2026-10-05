@@ -114,7 +114,7 @@ public enum OverlayPageTransitionStyle: Sendable {
 }
 
 @MainActor private final class PageHost: UIView, OverlayContentSizing, OverlayPresentationLifecycle,
-    OverlayContentEnvironment, OverlayWidthReceiving, OverlayContentTransition, OverlayContentSafeArea {
+    OverlayContentEnvironment, OverlayWidthReceiving, OverlayContentTransition, OverlayContentSafeArea, OverlayBoundaryRendering {
   @MainActor private final class ChromeHost: UIView {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
       let hit = super.hitTest(point, with: event)
@@ -127,6 +127,7 @@ public enum OverlayPageTransitionStyle: Sendable {
     let wrapper = UIView()
     let chromeHost = ChromeHost()
     let chrome: UIView?
+    let boundaryRenderer: OverlayBoundaryRenderer?
     let scaling: OverlayContentScaling
     var blur: UIVisualEffectView?
     var blurAnimator: UIViewPropertyAnimator?
@@ -139,6 +140,7 @@ public enum OverlayPageTransitionStyle: Sendable {
       layout = page.contentLayout
       scaling = page.contentScaling
       chrome = (view as? OverlayPageChrome)?.overlayChrome
+      boundaryRenderer = view is OverlayBoundaryHighlighting ? OverlayBoundaryRenderer() : nil
       wrapper.layer.anchorPoint = .zero
       wrapper.addSubview(view)
       if let chrome { chromeHost.addSubview(chrome) }
@@ -188,6 +190,7 @@ public enum OverlayPageTransitionStyle: Sendable {
     for entry in pages.values {
       entry.clearBlur()
       entry.wrapper.removeFromSuperview()
+      entry.boundaryRenderer?.removeFromSuperview()
       entry.chromeHost.removeFromSuperview()
     }
     pages.removeAll(); current = nil; onDismiss = nil; transitioning = false
@@ -208,6 +211,7 @@ public enum OverlayPageTransitionStyle: Sendable {
       next.chromeHost.alpha = 0
       pages[page.id] = next
       addSubview(next.wrapper)
+      if let renderer = next.boundaryRenderer { addSubview(renderer) }
       addSubview(next.chromeHost)
     }
     let previous = current
@@ -215,6 +219,7 @@ public enum OverlayPageTransitionStyle: Sendable {
     next.wrapper.isHidden = false
     next.chromeHost.isHidden = false
     bringSubviewToFront(next.wrapper)
+    if let renderer = next.boundaryRenderer { bringSubviewToFront(renderer) }
     bringSubviewToFront(next.chromeHost)
     transitioning = animated
     for entry in pages.values {
@@ -300,6 +305,20 @@ public enum OverlayPageTransitionStyle: Sendable {
   }
 
   var overlayExtendsToEdges: Bool { (current?.view as? OverlayContentSafeArea)?.overlayExtendsToEdges == true }
+
+  func renderBoundaryHighlights(panel: UIView, radii: OverlayRadii) {
+    for entry in pages.values {
+      guard let renderer = entry.boundaryRenderer else { continue }
+      renderer.isHidden = entry.wrapper.isHidden || entry.wrapper.alpha == 0
+      guard !renderer.isHidden else { continue }
+      entry.view.layoutIfNeeded()
+      UIView.performWithoutAnimation {
+        renderer.frame = entry.chromeHost.frame
+        renderer.alpha = entry.wrapper.alpha
+        renderer.update(content: entry.view, panel: panel, radii: radii)
+      }
+    }
+  }
   func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
     // Retain the destination environment alongside each stable allocation.
     // Viewport pages instead receive the current clearance on every frame.

@@ -29,7 +29,7 @@ def sim(*args):
 
 
 @contextmanager
-def lease(explicit, runtime):
+def lease(explicit, runtime, keep=False):
     if explicit:
         yield explicit
         return
@@ -51,7 +51,8 @@ def lease(explicit, runtime):
             sim('bootstatus', udid, '-b')
             yield udid
         finally:
-            sim('shutdown', udid)
+            if not keep:
+                sim('shutdown', udid)
 
 
 class UI:
@@ -247,6 +248,7 @@ def main():
     parser.add_argument('--udid')
     parser.add_argument('--runtime')
     parser.add_argument('--skip-build', action='store_true')
+    parser.add_argument('--keep-simulator', action='store_true', help='Leave the managed simulator booted for manual review')
     parser.add_argument('--scenario', choices=['baseline', 'dynamic', 'glass', 'pages', 'reliability'], default='baseline')
     parser.add_argument('--host', choices=['chat', 'sheet'])
     parser.add_argument('--appearance', choices=['light', 'dark'])
@@ -256,7 +258,7 @@ def main():
     plan = [{'id': host, 'title': host + ' ' + args.scenario + ' container preserves editing and interaction',
              'requiredEvidence': ['screenshot', 'video']} for host in ['chat', 'sheet']]
     (args.output / 'plan.json').write_text(json.dumps(plan, indent=2))
-    with lease(args.udid, args.runtime) as udid:
+    with lease(args.udid, args.runtime, keep=args.keep_simulator) as udid:
         build = ['xcodebuild', '-project', str(ROOT / 'Examples/OverlayDemo.xcodeproj'), '-scheme', 'OverlayDemo',
                  '-configuration', 'Debug', '-sdk', 'iphonesimulator', '-destination', 'id=' + udid]
         if not args.skip_build:

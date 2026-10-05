@@ -1,6 +1,6 @@
 {
   "name": "@rien7/anchored-overlay-kit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Native iOS anchored overlays with keyboard-aware placement and retained content transitions.",
   "license": "MIT",
   "author": "rien7",
@@ -14,10 +14,12 @@
   },
   "files": [
     "Sources/AnchoredOverlayKit/**/*.swift",
+    "Tests/AnchoredOverlayKitTests/**/*.swift",
     "AnchoredOverlayKit.podspec",
     "Package.swift",
     "README.zh-CN.md",
     "docs/*.md",
+    "docs/migrations/*.patch",
     "INTEGRATION.md",
     "PUBLISHING.md",
     "LICENSE"

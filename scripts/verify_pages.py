@@ -1,5 +1,6 @@
 """Real touches: expanding recent photos, retained selection/scroll and focus."""
 import time
+from verify import ROOT, run
 
 
 def exercise(ui, sheet):
@@ -29,6 +30,13 @@ def exercise(ui, sheet):
         assert control['y'] + control['height'] < grid['y'] + grid['height'] - 12, 'Controls touch bottom edge'
     assert ui.element('photos-done')['AXLabel'] == 'All Photos'
     ui.tap('photo-0')
+    ui.capture('photos-boundary-selected')
+    helper = ROOT / '.artifacts/boundary-pixels'
+    run('xcrun', '--sdk', 'macosx', 'swiftc', str(ROOT / 'scripts/verify-boundary-pixels.swift'), '-o', str(helper))
+    screen = next(item['frame'] for item in ui.state() if item.get('type') == 'Application')
+    result = run(str(helper), str(ui.output / 'photos-boundary-selected.png'),
+                 str(grid['x']), str(grid['y']), str(screen['width']))
+    (ui.output / 'boundary-pixels.txt').write_text(result)
     ui.tap('photo-1')
     assert ui.element('photo-1')['AXValue'] == 'Selected 2'
     ui.tap('photo-0')

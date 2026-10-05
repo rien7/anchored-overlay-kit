@@ -5,5 +5,8 @@ let package = Package(
   name: "AnchoredOverlayKit",
   platforms: [.iOS(.v16)],
   products: [.library(name: "AnchoredOverlayKit", targets: ["AnchoredOverlayKit"])],
-  targets: [.target(name: "AnchoredOverlayKit")]
+  targets: [
+    .target(name: "AnchoredOverlayKit"),
+    .testTarget(name: "AnchoredOverlayKitTests", dependencies: ["AnchoredOverlayKit"]),
+  ]
 )

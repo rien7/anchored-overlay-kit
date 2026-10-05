@@ -27,14 +27,17 @@ def main():
     packed = json.loads(run(['npm', 'pack', '--json', '--pack-destination', str(OUT)], log='pack.json'))[0]
     allowed = {'package.json', 'Package.swift', 'AnchoredOverlayKit.podspec',
                'README.md', 'README.zh-CN.md', 'docs/API.md', 'docs/API.zh-CN.md',
-               'INTEGRATION.md', 'PUBLISHING.md', 'LICENSE'}
+               'INTEGRATION.md', 'PUBLISHING.md', 'LICENSE',
+               'docs/migrations/lody-boundary-highlights.patch'}
     paths = {entry['path'] for entry in packed['files']}
     unexpected = {p for p in paths if p not in allowed and not
-                  (p.startswith('Sources/AnchoredOverlayKit/') and p.endswith('.swift'))}
+                  (p.startswith(('Sources/AnchoredOverlayKit/', 'Tests/AnchoredOverlayKitTests/')) and p.endswith('.swift'))}
     assert not unexpected, f'Unexpected published files: {unexpected}'
     assert allowed <= paths, f'Missing package files: {allowed - paths}'
     sources = {str(p.relative_to(ROOT)) for p in (ROOT / 'Sources').rglob('*.swift')}
     assert sources <= paths, f'Missing source files: {sources - paths}'
+    tests = {str(p.relative_to(ROOT)) for p in (ROOT / 'Tests').rglob('*.swift')}
+    assert tests <= paths, f'Missing Swift package test sources: {tests - paths}'
     (HOST / 'package.json').write_text('{"name":"overlay-distribution-host","private":true}')
     run(['npm', 'install', '--ignore-scripts', '--no-audit', '--no-fund',
          str(OUT / packed['filename'])], cwd=HOST, log='install.log')
@@ -49,6 +52,13 @@ def main():
     (HOST / 'App.swift').write_text('''import UIKit
 import SwiftUI
 import AnchoredOverlayKit
+final class HighlightContent: UIView, OverlayBoundaryHighlighting {
+    let item = UIView()
+    var overlayBoundaryHighlights: [OverlayBoundaryHighlight] {
+        [OverlayBoundaryHighlight(view: item, shape: .roundedRect(radius: 6), clippedTo: self,
+                                  color: .systemBlue, lineWidth: 2)]
+    }
+}
 @main final class App: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     let overlay = AnchoredOverlayController()

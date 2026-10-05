@@ -2,7 +2,7 @@
 
 [English](API.md) · [简体中文](API.zh-CN.md) · [返回 README](../README.zh-CN.md)
 
-对应 **0.2.0** 的公开 API，尺寸单位均为 pt。`Required` 表示必须传入、没有默认参数。展示与 UIKit 操作应在主 actor 上执行。下面的 Swift 签名用于说明接口，不是可直接拼接运行的示例。
+对应 **0.3.0** 的公开 API，尺寸单位均为 pt。`Required` 表示必须传入、没有默认参数。展示与 UIKit 操作应在主 actor 上执行。下面的 Swift 签名用于说明接口，不是可直接拼接运行的示例。
 
 ## Controller
 
@@ -224,6 +224,39 @@ OverlayMenuButton(controller: AnchoredOverlayController,
 `OverlayButton` 在父状态变化时更新同一内容树，自动使自然高度测量失效，遵守 `.disabled`，移除时仅取消自己持有的展示。保持 identity 稳定，改变 `.id` 会重置状态。UIViewRepresentable 生命周期方法与 Coordinator 是 SwiftUI 桥接实现，不是额外配置项。OverlayMenuButton 是其便捷封装。
 
 ## 控件与内容协议
+
+### 边界高亮
+
+传给 `present` 或由 `OverlayPage` 工厂返回的 UIKit 内容视图可实现
+`OverlayBoundaryHighlighting`：
+
+```swift
+var overlayBoundaryHighlights: [OverlayBoundaryHighlight] {
+  selectedVisibleImageViews.map {
+    OverlayBoundaryHighlight(view: $0, shape: .roundedRect(radius: 6),
+                             clippedTo: collectionView, color: .systemBlue, lineWidth: 2)
+  }
+}
+```
+
+库只在指定区域覆盖的**面板边界**补齐选中描边。选中数据、图片自身的边框和编号仍由应用负责。
+滚动视口只裁剪高亮范围，不会产生新的描边。
+
+| 成员 | 默认值 | 约定 |
+| --- | --- | --- |
+| `view` | 必填，弱引用 | 内容视图子树中的目标；已移除或隐藏的目标不绘制。 |
+| `shape` | `.bounds` | 目标局部 bounds，或圆弧圆角 `.roundedRect(radius:)`；跟随二维仿射变换。 |
+| `clippedTo` | `nil`，弱引用 | 可选的祖先视口，按 bounds 求交；`clipsToBounds` 祖先也提供矩形裁剪。不解析任意 layer mask 或透视变换。 |
+| `color` | `.systemBlue` | 动态 UIColor，随 trait 变化重新解析。 |
+| `lineWidth` | `2` | 面板坐标中的内描边宽度，不随内容缩放。非正数或非有限值关闭该项高亮。 |
+
+库在现有 display-link 时钟中、内容布局之后读取 getter，面板静止时也会更新。
+只返回可见的已选项目，getter 应保持轻量且无副作用。无需滚动代理、invalidate 调用、
+额外计时器或自行计算面板圆角；绘制快照未变化时不重写图层。重叠项按数组顺序绘制。
+
+渲染与面板共享实时圆角：iOS 26+ 使用系统连续圆角，iOS 16–25 使用与面板一致的路径回退。
+每页的高亮位于内容之上、chrome 之下，跟随内容可见性，并在关闭或取消时随页面宿主释放。
+高亮不参与点击和无障碍导航。纯 SwiftUI 内容需通过实现该协议的 UIKit 包装视图接入。
 
 ```swift
 OverlayControlMetrics()

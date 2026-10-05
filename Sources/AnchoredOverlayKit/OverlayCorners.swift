@@ -1,5 +1,14 @@
 import UIKit
 
+@MainActor extension UIView {
+  @available(iOS 26.0, *)
+  func overlaySetNativeCorners(_ radii: OverlayRadii) {
+    cornerConfiguration = .corners(
+      topLeftRadius: .fixed(radii.top), topRightRadius: .fixed(radii.top),
+      bottomLeftRadius: .fixed(radii.bottomLeft), bottomRightRadius: .fixed(radii.bottomRight))
+  }
+}
+
 /// Lives directly in the source window, even when the visible surface is hosted
 /// by the keyboard. UIKit resolves against that window's actual container shape.
 @MainActor final class OverlayCornerReference: UIView {

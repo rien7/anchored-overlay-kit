@@ -383,6 +383,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     if closing { updateClosingDestination() }
     let contentMoving = (surface?.content as? OverlayContentTransition)?.overlayTransitionActive == true
     if !contentMoving && zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
+      surface?.panel.renderBoundaryHighlights()
       lastTick = link.timestamp
       if closing { finishDismiss() }
       return
@@ -429,6 +430,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
                              safeAreaInsets: UIEdgeInsets(top: 0, left: 0, bottom: clearance, right: 0),
                              backgroundProgress: motion[8].value,
                              reducingMotion: UIAccessibility.isReduceMotionEnabled)
+    view.panel.renderBoundaryHighlights()
   }
 
   @objc private func background() {
@@ -676,6 +678,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
 @MainActor private final class OverlayPanel: UIView {
   private let content: UIView
   private let contentContainer = UIView()
+  private let boundaryRenderer: OverlayBoundaryRenderer?
   private var closingRepresentation: UIView?
   var contentSize: CGSize = .zero {
     didSet { if oldValue != contentSize { setNeedsLayout() } }
@@ -688,6 +691,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
   private var appliedBounds: CGRect = .null
   init(content: UIView, background: OverlayAppearance.Background) {
     self.content = content
+    boundaryRenderer = content is OverlayBoundaryHighlighting ? OverlayBoundaryRenderer() : nil
     super.init(frame: .zero)
     clipsToBounds = true
     layer.cornerCurve = .continuous
@@ -696,6 +700,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     addSubview(contentContainer)
     contentContainer.layer.anchorPoint = .zero
     contentContainer.addSubview(content)
+    if let boundaryRenderer { addSubview(boundaryRenderer) }
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   func setBackground(_ background: OverlayAppearance.Background, animated: Bool = false) {
@@ -737,12 +742,9 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     appliedRadii = radii
     appliedBounds = bounds
     if #available(iOS 26.0, *) {
-      let configuration = UICornerConfiguration.corners(
-        topLeftRadius: .fixed(radii.top), topRightRadius: .fixed(radii.top),
-        bottomLeftRadius: .fixed(radii.bottomLeft), bottomRightRadius: .fixed(radii.bottomRight))
-      cornerConfiguration = configuration
-      backdrop?.cornerConfiguration = configuration
-      for entry in fadingBackdrops { entry.view.cornerConfiguration = configuration }
+      overlaySetNativeCorners(radii)
+      backdrop?.overlaySetNativeCorners(radii)
+      for entry in fadingBackdrops { entry.view.overlaySetNativeCorners(radii) }
     } else {
       shapeMask.frame = bounds
       shapeMask.path = radii.path(in: bounds).cgPath
@@ -750,6 +752,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     }
   }
   func setClosingRepresentation(_ representation: UIView) {
+    boundaryRenderer?.isHidden = true
     closingRepresentation?.removeFromSuperview()
     closingRepresentation = representation
     representation.isUserInteractionEnabled = false
@@ -796,6 +799,20 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
         if presence < 0.999 { scale = min(scale, bounds.height / contentSize.height) }
       }
       contentContainer.transform = CGAffineTransform(scaleX: max(0.001, scale), y: max(0.001, scale))
+    }
+  }
+
+  func renderBoundaryHighlights() {
+    guard closingRepresentation == nil else { return }
+    if let pages = content as? OverlayBoundaryRendering {
+      pages.renderBoundaryHighlights(panel: self, radii: radii)
+    } else if let boundaryRenderer {
+      content.layoutIfNeeded()
+      UIView.performWithoutAnimation {
+        boundaryRenderer.frame = bounds
+        boundaryRenderer.alpha = contentContainer.alpha
+        boundaryRenderer.update(content: content, panel: self, radii: radii)
+      }
     }
   }
 

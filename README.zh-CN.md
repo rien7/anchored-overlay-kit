@@ -54,10 +54,10 @@ https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec
 https://github.com/rien7/anchored-overlay-kit.git
 ```
 
-选择 **0.2.0** 或更新版本，将 **AnchoredOverlayKit** 产品加入应用 target。使用 Package.swift 时添加：
+选择 **0.3.0** 或更新版本，将 **AnchoredOverlayKit** 产品加入应用 target。使用 Package.swift 时添加：
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.2.0")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.3.0")
 ```
 
 并在使用方 target 的 dependencies 中加入 `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")`。
@@ -78,7 +78,7 @@ package_json = Pod::Executable.execute_command('node', [
 pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-如果从原生模块中导入本库，还需要在该模块的 podspec 中声明 `s.dependency 'AnchoredOverlayKit', '~> 0.2.0'`。运行 `pod install` 后重新构建原生应用。同一 target 选择 CocoaPods 或 SPM 其中一种方式。
+如果从原生模块中导入本库，还需要在该模块的 podspec 中声明 `s.dependency 'AnchoredOverlayKit', '~> 0.3.0'`。运行 `pod install` 后重新构建原生应用。同一 target 选择 CocoaPods 或 SPM 其中一种方式。
 
 Expo 项目应把 extra pod 写进持久化的 app config，再执行 prebuild，参考 [Expo 接入示例](INTEGRATION.md#expo-prebuild)。Expo Go 无法加载本库。
 
@@ -276,6 +276,11 @@ overlay.performExternalInteraction(
 页面实现 `OverlayPageChrome`，返回自己的前景控件层。`OverlayActionBar` 可以排列返回、添加以及可选的中间快门。将 `OverlayContentSafeArea` 的回调传给 `safeAreaClearance`，使用 `contentBottomInset` 给滚动内容预留空间。
 
 将 `OverlayActionButton.actionStyle` 设为 `.emphasized`，即可使用 `accentColor` 强调已选中的操作。菜单尺寸、控件参数和生命周期协议见 [完整 API 文档](docs/API.zh-CN.md#控件与内容协议)。
+
+选中边框接触面板边缘时，实现 `OverlayBoundaryHighlighting` 并返回
+`OverlayBoundaryHighlight(view:clippedTo:color:lineWidth:)` 区域即可。
+库沿实时面板圆角补齐描边，并跟随滚动和页面转场；调用方保留选中数据与项目自身边框，
+无需复制面板圆角或创建 mask。参见[边界高亮](docs/API.zh-CN.md#边界高亮)。
 
 ## 键盘兼容性
 

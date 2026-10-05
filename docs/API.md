@@ -2,7 +2,7 @@
 
 [English](API.md) · [简体中文](API.zh-CN.md) · [README](../README.md)
 
-Public API for **0.2.0**. Sizes are in points. `Required` means there is no default argument. Run presentation and UIKit operations on the main actor. Swift signatures below describe the API; they are not a single executable example.
+Public API for **0.3.0**. Sizes are in points. `Required` means there is no default argument. Run presentation and UIKit operations on the main actor. Swift signatures below describe the API; they are not a single executable example.
 
 ## Controller
 
@@ -224,6 +224,44 @@ OverlayMenuButton(controller: AnchoredOverlayController,
 `OverlayButton` updates the same mounted content tree when parent state changes, automatically invalidates natural height, honors `.disabled`, and cancels only the presentation it owns when dismantled. Keep identity stable; changing `.id` resets state. Its UIViewRepresentable lifecycle methods and Coordinator are SwiftUI plumbing, not additional options. OverlayMenuButton is a convenience wrapper around this behavior.
 
 ## Controls and content protocols
+
+### Boundary highlights
+
+UIKit content passed to `present` or returned by an `OverlayPage` factory can
+conform to `OverlayBoundaryHighlighting`:
+
+```swift
+var overlayBoundaryHighlights: [OverlayBoundaryHighlight] {
+  selectedVisibleImageViews.map {
+    OverlayBoundaryHighlight(view: $0, shape: .roundedRect(radius: 6),
+                             clippedTo: collectionView, color: .systemBlue, lineWidth: 2)
+  }
+}
+```
+
+The library completes the selection border **only along the panel boundary**
+inside the supplied regions. Keep each item's own border, badge and selection
+model in the app. A viewport clips coverage but does not acquire a border.
+
+| Member | Default | Contract |
+| --- | --- | --- |
+| `view` | Required, weak | Target view in this content's subtree. Detached or hidden targets are ignored. |
+| `shape` | `.bounds` | Target-local bounds or `.roundedRect(radius:)` with circular corners; follows 2D affine transforms. |
+| `clippedTo` | `nil`, weak | Optional ancestor viewport; intersects coverage with its bounds. Ancestors with `clipsToBounds` also contribute rectangular clipping. Arbitrary layer masks and perspective transforms are not interpreted. |
+| `color` | `.systemBlue` | Dynamic UIColor, resolved again for trait changes. |
+| `lineWidth` | `2` | Inside stroke width in panel points, unaffected by page content scaling. Nonpositive or nonfinite widths disable the highlight. |
+
+The getter is sampled after layout on the controller's existing display-link
+clock, even when panel geometry is stationary. Return only visible selected
+items, keep the getter inexpensive and free of side effects. No scroll delegate,
+invalidation call, extra timer or panel-radius calculation is required. Unchanged
+drawing snapshots do not rewrite layers. Overlapping entries paint in array order.
+
+The renderer shares the panel's live corner geometry: system continuous corners
+on iOS 26+, the same path fallback as the panel on iOS 16–25. Each page's renderer
+sits above its body and below its chrome, follows body visibility, and is removed
+with the page host on dismissal/cancellation. It adds no hit targets or accessibility
+elements. SwiftUI-only content requires a UIKit wrapper adopting this protocol.
 
 ```swift
 OverlayControlMetrics()

@@ -22,7 +22,7 @@ pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 The consuming native module's podspec must also declare its dependency:
 
 ```ruby
-s.dependency 'AnchoredOverlayKit', '~> 0.2.0'
+s.dependency 'AnchoredOverlayKit', '~> 0.3.0'
 ```
 
 Run `pod install` and rebuild the application. Do not add the same library through
@@ -318,6 +318,35 @@ or permission state is retained by the library. Calls return `false` when there
 is no valid presentation or another external operation is pending.
 
 ### Optional UIKit content
+
+#### Selection at the panel boundary
+
+Adopt `OverlayBoundaryHighlighting` on the content returned by the page factory
+(or passed directly to `present`). Return descriptors for selected visible item
+views, using `clippedTo` for the collection/scroll viewport. The library owns the
+boundary stroke, coordinate mapping, clipping and presentation lifetime; the app
+owns item borders, badges and selection. No manual invalidation is needed.
+
+For Lody's `ChatRecentPhotosView`, the ready-to-apply
+[migration patch](docs/migrations/lody-boundary-highlights.patch) removes
+`selectionBoundary`, `selectionBoundaryMask`, path intersection and all scroll /
+layout refresh plumbing. It preserves the photo border and ordered selection.
+The API requires **0.3.0 or later**. Upgrade Lody's dependency before applying
+the source migration; unpatched 0.2.0 does not include it. If the migration is
+already applied through a local dependency patch, remove that dependency patch
+when upgrading to 0.3.0 instead of applying the source migration again.
+
+```sh
+# In the Lody repository, with the updated dependency installed:
+git apply --check /path/to/anchored-overlay-kit/docs/migrations/lody-boundary-highlights.patch
+git apply /path/to/anchored-overlay-kit/docs/migrations/lody-boundary-highlights.patch
+```
+
+See [the full contract](docs/API.md#boundary-highlights), including shape and
+viewport semantics. The offline photo demo exercises this API without Photos
+permission or a consuming app.
+
+#### Controls
 
 - `OverlayMenuContent(items:metrics:accentColor:)` renders localized caller-owned
   actions. Each item supplies a title, SF Symbol, optional accessibility identifier,

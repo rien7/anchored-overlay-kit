@@ -49,7 +49,7 @@ import UIKit
   }
 }
 
-@MainActor private final class PhotoGrid: UIView, OverlayContentSafeArea, OverlayPageChrome {
+@MainActor private final class PhotoGrid: UIView, OverlayContentSafeArea, OverlayPageChrome, OverlayBoundaryHighlighting {
   var overlayChrome: UIView { actionBar }
   private lazy var actionBar = OverlayActionBar(leading: back, trailing: done)
   private let scroll = UIScrollView()
@@ -60,6 +60,10 @@ import UIKit
   private var badges: [UILabel] = []
   private var selected: [Int] = []
   private let ids = [10, 15, 29, 54, 58, 76, 82, 106]
+
+  var overlayBoundaryHighlights: [OverlayBoundaryHighlight] {
+    selected.map { OverlayBoundaryHighlight(view: tiles[$0], clippedTo: scroll) }
+  }
 
   init(back onBack: @escaping () -> Void, close: @escaping () -> Void,
        library: @escaping () -> Void) {
@@ -86,6 +90,7 @@ import UIKit
         tile.setBackgroundImage(UIImage(contentsOfFile: path), for: .normal)
       }
       tile.clipsToBounds = true
+      tile.layer.borderColor = UIColor.systemBlue.cgColor
       tile.accessibilityLabel = "Sample photo \(index + 1)"
       tile.accessibilityIdentifier = "photo-\(index)"
       let badge = UILabel()
@@ -113,6 +118,7 @@ import UIKit
   private func updateSelection() {
     for (index, tile) in tiles.enumerated() {
       let position = selected.firstIndex(of: index)
+      tile.layer.borderWidth = position == nil ? 0 : 2
       badges[index].isHidden = position == nil
       if let position {
         badges[index].text = String(position + 1)
