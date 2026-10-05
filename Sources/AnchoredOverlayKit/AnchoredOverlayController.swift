@@ -46,6 +46,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
   private var motion: [OverlaySpring] = []
   private var target: [CGFloat] = []
   private var lastTick: CFTimeInterval = 0
+  private var motionFrameRateRange = CAFrameRateRange.default
   private var closeCompletions: [(OverlayDismissalResult) -> Void] = []
   private var dismissalResult = OverlayDismissalResult.dismissed
   private var refreshNeeded = true
@@ -132,6 +133,9 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     applyMotion()
     lastTick = 0
     let link = CADisplayLink(target: OverlayTick(self), selector: #selector(OverlayTick.tick(_:)))
+    let maximumFPS = Float(window.screen.maximumFramesPerSecond)
+    motionFrameRateRange = CAFrameRateRange(minimum: min(60, maximumFPS), maximum: maximumFPS, preferred: maximumFPS)
+    link.preferredFrameRateRange = motionFrameRateRange
     link.add(to: .main, forMode: .common)
     displayLink = link
     UIAccessibility.post(notification: .screenChanged, argument: content)
@@ -309,6 +313,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     } else {
       target = values(rect, radius: min(rect.width, rect.height) / 2, alpha: 0)
     }
+    beginMotionClock()
   }
 
   private func finishDismiss() {
@@ -385,10 +390,14 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     if !contentMoving && zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
       surface?.panel.renderBoundaryHighlights()
       lastTick = link.timestamp
+      if link.preferredFrameRateRange.preferred != 0 { link.preferredFrameRateRange = .default }
       if closing { finishDismiss() }
       return
     }
-    let elapsed = lastTick == 0 ? link.duration : min(0.1, link.timestamp - lastTick)
+    if link.preferredFrameRateRange.preferred != motionFrameRateRange.preferred { beginMotionClock() }
+    // A newly requested rate may not apply until the following callback. Start
+    // the clock at this frame rather than integrating the previous idle interval.
+    let elapsed = lastTick == 0 ? 0 : min(0.1, link.timestamp - lastTick)
     lastTick = link.timestamp
     if UIAccessibility.isReduceMotionEnabled && !closing { settleGeometry(includingContent: false) }
     for index in motion.indices { motion[index].advance(to: target[index], elapsed: elapsed) }
@@ -445,7 +454,16 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
 
   private func requestRefresh(transition: OverlayTransition = .spring) {
     refreshNeeded = true
+    // The next frame starts a new target. Time before this request belongs to
+    // the previous target, even if UIKit delayed its idle display callbacks.
+    // Keep spring values and velocities so interrupted motion stays continuous.
+    if transition == .spring { beginMotionClock() }
     if transition == .immediate { refresh(); settleGeometry() }
+  }
+
+  private func beginMotionClock() {
+    lastTick = 0
+    displayLink?.preferredFrameRateRange = motionFrameRateRange
   }
 
   private struct GeometrySnapshot: Equatable {

@@ -1,6 +1,17 @@
 import AnchoredOverlayKit
 import UIKit
 
+/// Decode each bundled image once, before an animated page needs to draw it.
+@MainActor enum SamplePhotos {
+  static let images: [UIImage] = [10, 15, 29, 54, 58, 76, 82, 106].map { id in
+    guard let path = Bundle.main.path(forResource: "photo-\(id)", ofType: "jpg", inDirectory: "Photos"),
+          let image = UIImage(contentsOfFile: path) else {
+      preconditionFailure("Missing bundled photo-\(id).jpg")
+    }
+    return image.preparingForDisplay() ?? image
+  }
+}
+
 /// Offline fixture: no Photos permission, network request or personal library.
 @MainActor final class RecentPhotosDemo {
   private let pages: OverlayPages
@@ -43,30 +54,36 @@ import UIKit
       layout: .expandingToBottom(inset: 12),
       appearance: OverlayAppearance(corners: .bottomConcentric())) { [weak self] in
         PhotoGrid(back: { [weak self] in self?.pages.back() },
-          close: { [weak self] in self?.onSelect?("Recent Photos") },
+          accept: { [weak self] _ in self?.onSelect?("Recent Photos") },
           library: { [weak self] in self?.onSelect?("Photo Library") })
       })
   }
 }
 
-@MainActor private final class PhotoGrid: UIView, OverlayContentSafeArea, OverlayPageChrome, OverlayBoundaryHighlighting {
+@MainActor final class PhotoGrid: UIView, OverlayContentSafeArea, OverlayPageChrome,
+    UICollectionViewDataSource, UICollectionViewDelegate, OverlayBoundaryHighlighting {
   var overlayChrome: UIView { actionBar }
   private lazy var actionBar = OverlayActionBar(leading: back, trailing: done)
-  private let scroll = UIScrollView()
-  private let grid = UIView()
+  private let flow = UICollectionViewFlowLayout()
+  private lazy var scroll = UICollectionView(frame: .zero, collectionViewLayout: flow)
   private let back = OverlayActionButton()
   private let done = OverlayActionButton()
-  private var tiles: [UIButton] = []
-  private var badges: [UILabel] = []
+  private let photos: [UIImage]
   private var selected: [Int] = []
-  private let ids = [10, 15, 29, 54, 58, 76, 82, 106]
 
   var overlayBoundaryHighlights: [OverlayBoundaryHighlight] {
-    selected.map { OverlayBoundaryHighlight(view: tiles[$0], clippedTo: scroll) }
+    scroll.indexPathsForVisibleItems.compactMap { indexPath in
+      guard selected.contains(indexPath.item),
+            let cell = scroll.cellForItem(at: indexPath) as? PhotoCell else { return nil }
+      return OverlayBoundaryHighlight(view: cell.contentView, clippedTo: scroll,
+                                      color: tintColor, lineWidth: 3)
+    }
   }
 
-  init(back onBack: @escaping () -> Void, close: @escaping () -> Void,
-       library: @escaping () -> Void) {
+  init(photos: [UIImage] = SamplePhotos.images,
+       back onBack: @escaping () -> Void, accept: @escaping ([UIImage]) -> Void,
+       library: (() -> Void)? = nil) {
+    self.photos = photos
     super.init(frame: .zero)
     back.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
     back.configuration?.image = UIImage(systemName: "chevron.left")
@@ -75,67 +92,79 @@ import UIKit
     back.addAction(UIAction { _ in onBack() }, for: .touchUpInside)
     done.horizontalPadding = 20
     done.accessibilityIdentifier = "photos-done"
+    done.configurationUpdateHandler = { button in
+      var configuration = button.configuration
+      let foreground = UIColor.white.withAlphaComponent(button.isEnabled ? 1 : 0.7)
+      configuration?.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+        var outgoing = incoming
+        outgoing.foregroundColor = foreground
+        return outgoing
+      }
+      button.configuration = configuration
+    }
     done.addAction(UIAction { [weak self] _ in
       guard let self else { return }
-      if self.selected.isEmpty { library() } else { close() }
+      if self.selected.isEmpty { library?() }
+      else { accept(self.selected.map { self.photos[$0 % self.photos.count] }) }
     }, for: .touchUpInside)
     scroll.keyboardDismissMode = .none
     scroll.contentInsetAdjustmentBehavior = .never
     scroll.accessibilityIdentifier = "photos-grid"
-    scroll.addSubview(grid)
+    scroll.backgroundColor = .clear
+    scroll.allowsMultipleSelection = true
+    scroll.dataSource = self
+    scroll.delegate = self
+    scroll.register(PhotoCell.self, forCellWithReuseIdentifier: "photo")
+    flow.minimumLineSpacing = 2
+    flow.minimumInteritemSpacing = 2
     addSubview(scroll)
-    for index in 0..<32 {
-      let tile = UIButton(type: .custom)
-      if let path = Bundle.main.path(forResource: "photo-\(ids[index % ids.count])", ofType: "jpg", inDirectory: "Photos") {
-        tile.setBackgroundImage(UIImage(contentsOfFile: path), for: .normal)
-      }
-      tile.clipsToBounds = true
-      tile.layer.borderColor = UIColor.systemBlue.cgColor
-      tile.accessibilityLabel = "Sample photo \(index + 1)"
-      tile.accessibilityIdentifier = "photo-\(index)"
-      let badge = UILabel()
-      badge.backgroundColor = .systemBlue
-      badge.textColor = .white
-      badge.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-      badge.textAlignment = .center
-      badge.layer.cornerRadius = 12
-      badge.clipsToBounds = true
-      badge.isAccessibilityElement = false
-      badge.isUserInteractionEnabled = false
-      tile.addSubview(badge)
-      tile.addAction(UIAction { [weak self] _ in
-        guard let self else { return }
-        if let position = self.selected.firstIndex(of: index) { self.selected.remove(at: position) }
-        else { self.selected.append(index) }
-        self.updateSelection()
-      }, for: .touchUpInside)
-      grid.addSubview(tile); tiles.append(tile); badges.append(badge)
-    }
+    emptyActionTitle = library == nil ? "Add 0" : "All Photos"
+    hasLibraryAction = library != nil
     updateSelection()
   }
   required init?(coder: NSCoder) { fatalError() }
+  private var emptyActionTitle = "All Photos"
+  private var hasLibraryAction = true
+
+  func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+    photos.isEmpty ? 0 : 32
+  }
+
+  func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+    let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "photo", for: indexPath) as! PhotoCell
+    configure(cell, at: indexPath.item)
+    return cell
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    selected.append(indexPath.item)
+    updateSelection()
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
+    selected.removeAll { $0 == indexPath.item }
+    updateSelection()
+  }
+
+  private func configure(_ cell: PhotoCell, at index: Int) {
+    cell.configure(image: photos[index % photos.count], index: index,
+                   number: selected.firstIndex(of: index).map { $0 + 1 })
+  }
 
   private func updateSelection() {
-    for (index, tile) in tiles.enumerated() {
-      let position = selected.firstIndex(of: index)
-      tile.layer.borderWidth = position == nil ? 0 : 2
-      badges[index].isHidden = position == nil
-      if let position {
-        badges[index].text = String(position + 1)
-        tile.accessibilityValue = "Selected \(position + 1)"
-        tile.accessibilityTraits.insert(.selected)
-      } else {
-        tile.accessibilityValue = "Not selected"
-        tile.accessibilityTraits.remove(.selected)
-      }
+    for indexPath in scroll.indexPathsForVisibleItems {
+      if let cell = scroll.cellForItem(at: indexPath) as? PhotoCell { configure(cell, at: indexPath.item) }
     }
     done.actionStyle = selected.isEmpty ? .neutral : .emphasized
-    done.configuration?.title = selected.isEmpty ? "All Photos" : "Add \(selected.count)"
+    done.appearance = selected.isEmpty ? .clearGlass(backingColor: .black.withAlphaComponent(0.6)) : .automatic
+    done.configuration?.title = selected.isEmpty ? emptyActionTitle : "Add \(selected.count)"
+    done.isEnabled = hasLibraryAction || !selected.isEmpty
     done.accessibilityValue = "\(selected.count) selected"
     setNeedsLayout()
   }
 
   func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
+    guard actionBar.safeAreaClearance != insets else { return }
     actionBar.safeAreaClearance = insets
     setNeedsLayout()
   }
@@ -146,12 +175,48 @@ import UIKit
     scroll.contentInset.bottom = actionBar.contentBottomInset
     scroll.verticalScrollIndicatorInsets.bottom = actionBar.contentBottomInset
     let side = max(0, (bounds.width - 4) / 3)
-    let height = CGFloat((tiles.count + 2) / 3) * (side + 2) - 2
-    grid.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
-    scroll.contentSize = grid.bounds.size
-    for (index, tile) in tiles.enumerated() {
-      tile.frame = CGRect(x: CGFloat(index % 3) * (side + 2), y: CGFloat(index / 3) * (side + 2), width: side, height: side)
-      badges[index].frame = CGRect(x: max(0, side - 30), y: 6, width: 24, height: 24)
-    }
+    let itemSize = CGSize(width: side, height: side)
+    if flow.itemSize != itemSize { flow.itemSize = itemSize }
+  }
+}
+
+/// The collection creates and draws only visible photos; selection stays in PhotoGrid.
+@MainActor private final class PhotoCell: UICollectionViewCell {
+  private let image = UIImageView()
+  private let badge = UILabel()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isAccessibilityElement = true
+    contentView.clipsToBounds = true
+    image.contentMode = .scaleAspectFill
+    image.clipsToBounds = true
+    contentView.addSubview(image)
+    badge.backgroundColor = .systemBlue
+    badge.textColor = .white
+    badge.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    badge.textAlignment = .center
+    badge.layer.cornerRadius = 12
+    badge.clipsToBounds = true
+    contentView.addSubview(badge)
+  }
+  required init?(coder: NSCoder) { fatalError() }
+
+  func configure(image: UIImage, index: Int, number: Int?) {
+    self.image.image = image
+    badge.isHidden = number == nil
+    badge.text = number.map(String.init)
+    contentView.layer.borderWidth = number == nil ? 0 : 3
+    contentView.layer.borderColor = tintColor.cgColor
+    accessibilityLabel = "Sample photo \(index + 1)"
+    accessibilityIdentifier = "photo-\(index)"
+    accessibilityValue = number.map { "Selected \($0)" } ?? "Not selected"
+    accessibilityTraits = number == nil ? [.button] : [.button, .selected]
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    image.frame = contentView.bounds
+    badge.frame = CGRect(x: max(0, bounds.width - 30), y: 6, width: 24, height: 24)
   }
 }

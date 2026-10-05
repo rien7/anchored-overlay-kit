@@ -2,65 +2,52 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-Open a menu from your editor’s **+** button, then expand it into a photo grid or camera panel—all inside one animated container, while the keyboard stays open.
+Anchored menus and expanding panels for iOS, with UIKit and SwiftUI support. Open a menu from an editor’s **+** button, move between pages and add content to the draft while keeping keyboard focus.
 
-AnchoredOverlayKit is a small UIKit and SwiftUI library for iOS. It handles placement, resizing, native glass, rounded corners and page transitions. Your app supplies the content and actions.
+The library handles presentation, layout, material, clipping and transitions. Your app supplies content, selection state and actions.
 
-- Keep editor focus while presenting over the keyboard when a compatible host is available.
-- Push and pop pages without rebuilding their views or losing scroll position.
-- Use native Liquid Glass on iOS 26+, with system material on older versions.
-- Animate accepted content into a destination view, such as an attachment thumbnail.
-- Coordinate permission prompts and Settings round trips with the original scene.
+- Retain page views, local state and scroll position across navigation.
+- Choose content layout, scaling and page effects independently.
+- Use native Liquid Glass on iOS 26+, with system material on earlier versions.
+- Complete item selection borders along the panel’s live rounded boundary.
+- Animate content into a destination view and coordinate returns from system UI.
 
-**Requires iOS 16+, Swift 6.2 and Xcode 26+.** No third-party runtime dependencies.
+**Requires iOS 16+, Swift 6.2 and Xcode 26+.** No third-party runtime dependencies. The examples below use the **0.3.0** API.
 
-[Install](#installation) · [UIKit](#uikit-quick-start) · [SwiftUI](#swiftui) · [Common patterns](#common-patterns) · [All API options](docs/API.md) · [Integration guide](INTEGRATION.md)
+[Demo](#demo) · [Install](#installation) · [Quick start](#quick-start) · [Pages](#compose-pages) · [Boundary highlights](#selection-at-rounded-edges) · [API reference](docs/API.md)
 
-## See it in use
+## Demo
 
-These recordings show the library integrated into [**Lody iOS**](https://github.com/Innei/lody-ios) ([Lody](https://github.com/LodyAI/Lody)). Photo loading, selection, camera capture and editor attachments are app features, not bundled components.
+Open the menu → expand photos → select two → add to the draft → keep typing.
 
-**Photos:** expand from the menu, change grid layout, select photos and animate them into the draft.
+![Continuous composer and photo demo](https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-preview-0.3.0-1f5e9aa0567a.gif)
 
-![Animated photo menu preview](https://raw.githubusercontent.com/rien7/anchored-overlay-kit/main/docs/media/photos-preview.gif)
+[Watch or download the full video](https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-0.3.0-e214b87b516b.mp4). One continuous recording at 1× speed on the iOS 26.4 Simulator. The example runs offline with bundled photos; its rounded selection borders use `OverlayBoundaryHighlighting`.
 
-<details>
-<summary>Watch the full video</summary>
-
-https://github.com/user-attachments/assets/e3288620-ad88-46c9-ae85-749ba4e518ba
-
-</details>
-
-**Camera:** expand the viewfinder, retry a capture and add it to the draft.
-
-![Animated camera preview](https://raw.githubusercontent.com/rien7/anchored-overlay-kit/main/docs/media/camera-preview.gif)
-
-<details>
-<summary>Watch the full video</summary>
-
-https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec
-
-</details>
-
-Recorded on the iOS 26.4 Simulator at Lody commit `3b582f0`; playback is 1.5×. The camera uses a deterministic fixture, not a physical camera feed.
+Open [Examples/OverlayDemo.xcodeproj](Examples/OverlayDemo.xcodeproj) and select **Showcase** to try this flow. The runnable code is in [ShowcaseController.swift](Examples/OverlayDemo/ShowcaseController.swift) and [RecentPhotosDemo.swift](Examples/OverlayDemo/RecentPhotosDemo.swift).
 
 ## Installation
 
+| Application | Installation | Package contents |
+| --- | --- | --- |
+| UIKit / SwiftUI | Swift Package Manager | Native library product. |
+| React Native / Expo | npm + CocoaPods | Swift source for your native module; the app provides the bridge. |
+
 ### Swift Package Manager
 
-In Xcode, choose **File → Add Package Dependencies** and enter:
+In Xcode, choose **File → Add Package Dependencies**, enter the repository URL and select **0.3.0** or later:
 
 ```text
 https://github.com/rien7/anchored-overlay-kit.git
 ```
 
-Select version **0.3.0** or later and add the **AnchoredOverlayKit** product to your app target. For a package manifest:
+For a package manifest:
 
 ```swift
 .package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.3.0")
 ```
 
-Add `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")` to the consuming target’s dependencies.
+Add `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")` to your target’s dependencies.
 
 ### npm + CocoaPods / Expo
 
@@ -68,7 +55,7 @@ Add `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")` to t
 pnpm add @rien7/anchored-overlay-kit
 ```
 
-The npm package distributes **native Swift source**. It has no JavaScript component or automatic React Native bridge. Add this inside your app’s Podfile target:
+Inside the application target in your Podfile:
 
 ```ruby
 package_json = Pod::Executable.execute_command('node', [
@@ -78,73 +65,50 @@ package_json = Pod::Executable.execute_command('node', [
 pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-If a native module imports the library, declare `s.dependency 'AnchoredOverlayKit', '~> 0.3.0'` in that module’s podspec too. Run `pod install` and rebuild the native app. Use either CocoaPods or SPM per target.
+A consuming native module also needs `s.dependency 'AnchoredOverlayKit', '~> 0.3.0'` in its podspec. Run `pod install` and rebuild the native application. Choose one installation method per target.
 
-For Expo, persist the extra pod in app configuration before prebuild; see the [Expo integration recipe](INTEGRATION.md#expo-prebuild). Expo Go cannot load this native library.
+The npm package supplies **native Swift source**. It does not include a JavaScript component or automatic React Native bridge. For Expo, persist the pod in app configuration before prebuild; follow the [Expo integration recipe](INTEGRATION.md#expo-prebuild). Use a native/development build; Expo Go cannot load the library.
 
-## UIKit quick start
+## Quick start
 
-Create and retain the controller **before the editor starts editing**. Present from a view attached to the active window. Here is a small controller you can adapt to your composer:
+Create and retain one controller per editor **before editing starts**. The anchor must be attached to the active window. Content supplies its internal padding and controls; the controller supplies the outer material and clipping.
+
+### UIKit
+
+Add these members to your existing view controller, then call `showMenu(from:)` from its button action:
 
 ```swift
 import UIKit
 import AnchoredOverlayKit
 
-@MainActor
-final class EditorViewController: UIViewController {
-  private let overlay = AnchoredOverlayController()
-  private let plusButton = UIButton(type: .system)
+private let overlay = AnchoredOverlayController()
 
-  override func viewDidLoad() {
-    super.viewDidLoad()
-    plusButton.setImage(UIImage(systemName: "plus"), for: .normal)
-    plusButton.accessibilityLabel = "Attachments"
-    plusButton.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(plusButton)
-    NSLayoutConstraint.activate([
-      plusButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-      plusButton.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8),
-      plusButton.widthAnchor.constraint(equalToConstant: 44),
-      plusButton.heightAnchor.constraint(equalToConstant: 44),
-    ])
-    plusButton.addAction(UIAction { [weak self] _ in self?.showMenu() }, for: .touchUpInside)
-  }
+private func showMenu(from button: UIView) {
+  let metrics = OverlayControlMetrics()
+  let menu = OverlayMenuContent(items: [
+    .init(title: "Close", systemImage: "xmark") { [weak self] in
+      self?.overlay.dismiss()
+    },
+  ], metrics: metrics)
 
-  private func showMenu() {
-    let metrics = OverlayControlMetrics()
-    let menu = OverlayMenuContent(items: [
-      .init(title: "Insert text", systemImage: "text.badge.plus") { [weak self] in
-        self?.overlay.dismiss { [weak self] in self?.insertText() }
-      },
-      .init(title: "Close", systemImage: "xmark") { [weak self] in
-        self?.overlay.dismiss()
-      },
-    ], metrics: metrics)
-    overlay.present(
-      content: menu, anchoredTo: plusButton,
-      layout: .init(width: .fixed(280), height: .content(max: 360)),
-      appearance: .init(cornerRadius: metrics.menuRadius),
-      dismissLabel: "Close attachments"
-    )
-  }
-
-  private func insertText() { /* Update your editor here. */ }
-
-  override func viewWillDisappear(_ animated: Bool) {
-    super.viewWillDisappear(animated)
-    overlay.cancel()
-  }
+  overlay.present(
+    content: menu, anchoredTo: button,
+    layout: .init(width: .fixed(280), height: .content(max: 360)),
+    appearance: .init(cornerRadius: metrics.menuRadius),
+    dismissLabel: "Close menu"
+  )
 }
 ```
 
-The controller owns the outer material and clipping. Content supplies its padding and controls. Using the same `metrics.menuRadius` for the menu and container keeps the icon discs concentric with the menu corners.
+Replace the menu items with your own actions. Using the same `metrics.menuRadius` for the menu and container aligns their corners. Call `overlay.cancel()` when the owner is removed. For a complete editor and button setup, see the [Showcase example](Examples/OverlayDemo/ShowcaseController.swift).
 
-## SwiftUI
+### SwiftUI
 
 ```swift
 import SwiftUI
 import AnchoredOverlayKit
 
+@MainActor
 struct InsertButton: View {
   @State private var overlay = AnchoredOverlayController()
 
@@ -168,131 +132,133 @@ struct InsertButton: View {
 }
 ```
 
-Keep the controller and view identity stable. State changes update the mounted content; natural height is measured again automatically. `.disabled(true)` closes this button’s presentation. For a fixed-size SF Symbol trigger, use `OverlayMenuButton`.
+Keep controller and view identity stable. State changes update the mounted content and its natural height. `.disabled(true)` closes the presentation owned by this button. `OverlayMenuButton` is a convenience trigger for a fixed-size SF Symbol.
 
-## Common patterns
+## Compose pages
 
-### Expand a menu into another page
-
-Use `OverlayPages` for one continuous container. The following snippets belong to the same owner; `makePhotoGrid()` is your own view factory:
+`OverlayPages` keeps one container and retains each page by ID. In the same owner, create it from your controller:
 
 ```swift
-// Stored properties on the owning view controller:
-private let overlay = AnchoredOverlayController()
-private lazy var pages = OverlayPages(controller: overlay)
+private lazy var pages = OverlayPages(
+  controller: overlay, transitionStyle: .blurredCrossfade
+)
+```
 
-// Open the root menu:
+Use your own `makeMenu()` and `makePhotoGrid()` view factories in the corresponding button handlers:
+
+```swift
 let menu = OverlayPage(
   id: "menu",
   layout: .init(width: .fixed(280), height: .content(max: 360)),
-  appearance: .init(cornerRadius: 40)
-) { [weak self] in
-  OverlayMenuContent(items: [
-    .init(title: "Recent photos", systemImage: "photo.on.rectangle") { [weak self] in
-      self?.showPhotos()
-    },
-  ])
-}
+  appearance: .init(cornerRadius: 40),
+  contentScaling: .fit
+) { [weak self] in self?.makeMenu() ?? UIView() }
 pages.present(menu, anchoredTo: plusButton, dismissLabel: "Close attachments")
 
-// In showPhotos(), return your own grid from makePhotoGrid():
-pages.push(OverlayPage(
+let photos = OverlayPage(
   id: "photos",
   layout: .expandingToBottom(inset: 12),
   appearance: .init(corners: .bottomConcentric(top: 24, fallback: 24))
-) { [weak self] in self?.makePhotoGrid() ?? UIView() })
+) { [weak self] in self?.makePhotoGrid() ?? UIView() }
+pages.push(photos)
 
-// Back button:
+// In the secondary page's Back action:
 pages.back()
 ```
 
-Views are retained by page ID until the overlay closes. Back navigation preserves their local state and scroll position. Store selection in your app if it must survive dismissal. Use `contentLayout: .viewport` for a camera preview that should follow the panel’s live size; the default `.stable` keeps text and grids at their destination size and reveals them by clipping.
+Back navigation preserves page state and scroll position until the overlay closes. Store selections in your app model if they must survive dismissal. Use weak owner captures in retained page factories and action closures, as the [Showcase example](Examples/OverlayDemo/ShowcaseController.swift) does.
 
-### Resize or change material
+Layout and visual motion are separate choices:
 
-```swift
-let layout = OverlayLayout.bottomEdge(
-  inset: 12, height: .viewportFraction(0.6), maxWidth: 600
-)
-let appearance = OverlayAppearance(
-  corners: .bottomConcentric(top: 24, fallback: 24),
-  background: .glass(.regular)
-)
-overlay.update(layout: layout, appearance: appearance)
+| Policy | Default | Alternative |
+| --- | --- | --- |
+| `contentLayout` on a page | `.stable`: lay out at the destination size and reveal by clipping. | `.viewport`: lay out at the panel’s current visible size. |
+| `contentScaling` on a page | `.none`: keep content at its point size. | `.fit`: scale the laid-out content to fit the changing panel. |
+| `transitionStyle` on `OverlayPages` | `.sequentialFade` | `.crossfade` or `.blurredCrossfade` |
 
-// Other backgrounds:
-let tinted = OverlayAppearance(background:
-  .glass(.clear, tint: .systemBlue.withAlphaComponent(0.12)))
-let blur = OverlayAppearance(background: .material(.systemMaterial))
-let solid = OverlayAppearance(background: .color(.secondarySystemBackground))
-```
+The demo uses a scaled menu and an unscaled photo grid. `OverlayPageChrome` stays at its point size even when the body scales. `.spring` and `.immediate` control transition timing. Reduce Motion snaps geometry and disables scaling; Reduce Motion or Reduce Transparency disables blur. See [page motion](docs/API.md#page-motion) for the full contract.
 
-`.viewportFraction(0.6)` means 60% of the source window’s height, clamped to available space. `.expandingToBottom()` preserves the previous panel’s top and fills downward. `.bottom(inset:)` sits inside the safe area; `.bottomEdge(inset:height:)` measures from the window edge.
+## Selection at rounded edges
 
-On iOS 26+, equally inset bottom panels can use system-resolved concentric corners: `inner radius = max(0, outer radius − inset)`. Width caps, unequal spacing, above-keyboard placement and older systems use the explicit fallback. The top radius is always yours to choose.
+**Added in 0.3.0:** `OverlayBoundaryHighlighting` lets content identify regions whose borders should continue along the rounded panel edge. The library shares its live clipping geometry with the highlight renderer and follows scrolling and transitions.
 
-For UIKit content that changes size, call `overlay.invalidateContentSize()`. Supply Auto Layout constraints or conform to `OverlayContentSizing`. Scrollable pages need a bounded height. See [layout and appearance options](docs/API.md#layout-and-appearance).
-
-### Animate a photo into the composer
+Adopt the protocol on the UIKit content view passed to `present` or returned by an `OverlayPage` factory. For example, in your own photo grid:
 
 ```swift
-// First accept the media into your model and mount its destination thumbnail.
-let preview = UIImageView(image: selectedImage)
-preview.contentMode = .scaleAspectFill
-preview.clipsToBounds = true
-
-overlay.dismiss(
-  to: attachmentThumbnail, representation: preview,
-  cornerRadius: 8, destinationVisibility: .hideDuringTransition
-) { result in
-  // The library restores the thumbnail's original alpha before this callback.
-  // Observe .dismissed / .superseded / .cancelled / .notPresented here.
+extension PhotoGridView: OverlayBoundaryHighlighting {
+  var overlayBoundaryHighlights: [OverlayBoundaryHighlight] {
+    selectedVisibleImageViews.map { imageView in
+      OverlayBoundaryHighlight(
+        view: imageView, clippedTo: collectionView,
+        color: tintColor, lineWidth: 3
+      )
+    }
+  }
 }
 ```
 
-Use a new, detached representation view. A missing/offscreen target or Reduce Motion falls back to a fade. The library animates the handoff; your app owns acceptance, media and draft state.
+Here, `selectedVisibleImageViews` comes from your selection model and currently visible cells. Match the color and width to each item’s own border. The app draws item borders and badges; the library completes the border **along the panel boundary within those regions**. The viewport clips coverage without gaining an extra border.
 
-### Return from Settings or a permission prompt
+Return only visible selected views and keep the getter free of layout changes. No panel-radius calculation, mask, scroll callback or invalidation call is required. Rounded items can specify `shape: .roundedRect(radius:)`. For SwiftUI content, provide a UIKit wrapper adopting the protocol. See [boundary highlight options and limits](docs/API.md#boundary-highlights).
+
+## Layout and controls
+
+### Resize the panel
 
 ```swift
-overlay.performExternalInteraction(
-  from: self,
-  interaction: .leavingApp,
-  isValid: { [weak self] in self?.viewIfLoaded?.window != nil },
-  operation: { _, complete in
-    let url = URL(string: UIApplication.openSettingsURLString)!
-    UIApplication.shared.open(url) { opened in
-      Task { @MainActor in complete(opened) }
-    }
-  },
-  resume: { [weak self] in self?.showMenu() }
+overlay.update(
+  layout: .bottomEdge(inset: 12, height: .viewportFraction(0.6)),
+  appearance: .init(corners: .bottomConcentric(top: 24, fallback: 24))
 )
 ```
 
-For a permission prompt or an in-app system picker, choose `.inApp` and invoke `complete(true)` on the main actor after the operation finishes. For `.leavingApp`, resuming also waits for the original scene to reactivate. New presentations and owner teardown invalidate stale callbacks. The app chooses which page to reopen and calls `cancel()` when its owner is removed.
+`.viewportFraction(0.6)` uses 60% of the source window’s height, clamped to available space. `.expandingToBottom()` retains the previous panel top and fills downward. `.bottom(inset:)` measures from the safe area; `.bottomEdge(inset:height:)` measures from the window edge.
 
-### Add floating controls
+On iOS 26+, equally inset bottom panels can use system-resolved concentric corners. Width-capped, above-keyboard and older-system layouts use the fallback radius. UIKit content supplies Auto Layout fitting or `OverlayContentSizing`; call `invalidateContentSize()` after its natural height changes. Scrollable pages need bounded heights. See [layout and appearance](docs/API.md#layout-and-appearance).
 
-Have your page conform to `OverlayPageChrome` and return its own foreground view. `OverlayActionBar` can arrange Back, Add and an optional center shutter. Forward `OverlayContentSafeArea` updates to its `safeAreaClearance`; use `contentBottomInset` to keep scroll content clear.
+### Add floating actions
 
-`OverlayActionButton.actionStyle = .emphasized` applies `accentColor` to a selected action. Menu metrics, all control parameters and lifecycle protocols are in the [complete API reference](docs/API.md#controls-and-content-protocols).
+Return a foreground view through `OverlayPageChrome`. Use `OverlayActionBar` for Back, Add and an optional center action. Forward `OverlayContentSafeArea` updates to `safeAreaClearance`, and use `contentBottomInset` to keep scroll content clear of controls.
 
-For selection borders touching the panel edge, adopt `OverlayBoundaryHighlighting`
-and return `OverlayBoundaryHighlight(view:clippedTo:color:lineWidth:)` regions.
-The library completes the border along its live rounded boundary, including during
-scrolling and page transitions. Your app keeps selection state and item borders;
-it no longer needs to reconstruct the panel's corners or masks. See
-[boundary highlights](docs/API.md#boundary-highlights).
+```swift
+let back = OverlayActionButton()
+back.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
+back.configuration?.image = UIImage(systemName: "chevron.left")
+back.accessibilityLabel = "Back"
+```
+
+`actionStyle` expresses emphasis; `appearance` controls material and backing. Use `.emphasized` with `accentColor` for the primary action. The backing is painted beneath glass; `.automatic` restores the default appearance. See [action appearance](docs/API.md#action-appearance) and the [photo grid example](Examples/OverlayDemo/RecentPhotosDemo.swift).
+
+## Handoff and lifecycle
+
+| Task | API | Application responsibility |
+| --- | --- | --- |
+| Animate into an attachment thumbnail | `dismiss(to:representation:cornerRadius:destinationVisibility:completion:)` | Accept content into the model and mount the destination first; supply a new, detached representation view. |
+| Wait for a permission prompt or system picker | `performExternalInteraction` with `.inApp` | Perform the operation and complete it on the main actor. |
+| Return from Settings | `performExternalInteraction` with `.leavingApp` | Supply the owning presenter, validity check and page to resume in the original scene. |
+| Tear down the editor | `cancel()` | Cancel when the owner is removed; stop cameras and subscriptions when their page becomes inactive. |
+
+Destination handoff restores the target’s original alpha before completion. Missing/offscreen destinations and Reduce Motion fall back to a fade. `OverlayPageActivity` reports page activation independently of retained view caching. See [dismissal](docs/API.md#dismissal-and-cancellation), [external interactions](docs/API.md#external-interactions) and [content protocols](docs/API.md#content-protocols).
 
 ## Keyboard compatibility
 
-The library preserves focus rather than dismissing the keyboard to make room. Actual placement is observable through `placementState`: over the keyboard, above it, or in the app window. Set `allowsKeyboardOverlap: false` to opt out.
+Create the controller before editing begins. It preserves editor focus and tries to present over a compatible keyboard host; inspect `placementState` to observe actual placement. Set `allowsKeyboardOverlap: false` to keep the overlay in the app window.
 
-Over-keyboard hosting recognizes UIKit’s undocumented `UIRemoteKeyboardWindow` class name. That dependency is isolated; no private selectors or key-window changes are used. If the host cannot be identified safely, the overlay falls back to the app window and avoids the keyboard. Initialize early and test the keyboards, devices and scene arrangements you support. Third-party keyboards, floating keyboards and multiple displays are not universally guaranteed.
+Keyboard hosting recognizes UIKit’s undocumented `UIRemoteKeyboardWindow` class name, isolated in [KeyboardOverlayHost.swift](Sources/AnchoredOverlayKit/KeyboardOverlayHost.swift). It calls no private selectors and does not change the key window. If a host cannot be identified reliably, the library falls back to the app window and avoids the keyboard. Validate your supported device, keyboard and scene combinations; see [integration constraints](INTEGRATION.md#ownership-and-constraints).
 
-## Examples and development
+## Examples and documentation
 
-Clone the repository and open [Examples/OverlayDemo.xcodeproj](Examples/OverlayDemo.xcodeproj). It includes UIKit and SwiftUI menus, resizing and a fixture-based recent-photo grid. The example opens real system pickers but does not fetch a real photo library.
+Clone the repository and open [Examples/OverlayDemo.xcodeproj](Examples/OverlayDemo.xcodeproj). **Showcase** runs the flow above; other screens cover UIKit/SwiftUI menus, resizing, retained pages and lifecycle behavior. Photo grids use bundled images; system-picker examples open real system UI.
+
+| Resource | Contents |
+| --- | --- |
+| [API reference](docs/API.md) | Signatures, defaults, results and lifecycle contracts. |
+| [Integration guide](INTEGRATION.md) | CocoaPods, Expo and consuming-app integration. |
+| [Validation](VALIDATION.md) | Checks and runtime evidence. |
+| [Recording guide](docs/media/README.md) | Continuous demo capture and earlier Lody recordings. |
+| [Publishing](PUBLISHING.md) | npm and Swift Package distribution. |
+
+For contributions, include a runnable example and execute the checks relevant to the change:
 
 ```sh
 python3 scripts/verify.py
@@ -300,7 +266,7 @@ python3 scripts/verify.py --scenario pages --output .artifacts/pages-acceptance
 npm run verify:distribution
 ```
 
-Simulator checks require Xcode, an iOS runtime, Python 3, AXe and ffmpeg/ffprobe. Set `DEVELOPER_DIR` if needed. Distribution checks build signed CocoaPods and SPM hosts from the packed npm artifact. See [validation notes](VALIDATION.md) and [publishing instructions](PUBLISHING.md).
+Simulator checks require Xcode, an iOS runtime, Python 3, AXe and ffmpeg/ffprobe. Set `DEVELOPER_DIR` for your Xcode installation if needed. Distribution checks build signed CocoaPods and SPM hosts from the packed npm artifact. [Lody iOS](https://github.com/Innei/lody-ios) is a reference consuming application.
 
 ## License
 

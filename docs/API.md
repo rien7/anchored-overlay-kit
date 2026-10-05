@@ -49,6 +49,10 @@ func invalidateContentSize(transition: OverlayTransition = .spring)
 
 All layout/appearance arguments are required. Updates retain mounted content. `update` changes geometry and appearance together; its optional keyboard policy leaves the previous value unchanged when `nil`. `.spring` preserves current motion when interrupted; `.immediate` snaps geometry. Call `invalidateContentSize` after UIKit fitting changes. Reduce Motion snaps geometry and retains a fade.
 
+For ProMotion timing hints, enable the Boolean `CADisableMinimumFrameDurationOnPhone`
+in the app's Info.plist, as the example does. Actual refresh rates remain controlled
+by the system. See [Apple's ProMotion guidance](https://developer.apple.com/documentation/quartzcore/optimizing-iphone-and-ipad-apps-to-support-promotion-displays).
+
 ### Dismissal and cancellation
 
 ```swift
@@ -177,10 +181,12 @@ func back(transition: OverlayTransition = .spring)
 
 | Parameter / member | Default | Meaning |
 | --- | --- | --- |
+| `transitionStyle` | .sequentialFade | Page exchange style; fixed for each OverlayPages instance. |
 | `controller` | Required | Retain both the controller and OverlayPages in the owner. Public read-only property on OverlayPages. |
 | `id` | Required | Stable logical page ID; read-only. Same ID reuses its cached view until dismissal. |
 | `layout` | Required | Page layout; mutable value on OverlayPage. |
 | `appearance` | .standard | Page container appearance; mutable. |
+| `contentScaling` | .none | `.none` or `.fit`; visual mapping independent of layout. Mutable on OverlayPage. |
 | `contentLayout` | .stable | `.stable` lays out at the destination size; `.viewport` follows animated bounds. Mutable. Both initializers accept this policy. |
 | `content / makeContent` | Required | Factory runs once per retained ID. Stored as mutable makeContent; business state remains app-owned. |
 | `anchoredTo / dismissLabel` | Required | Same meanings as controller.present. |
@@ -189,7 +195,32 @@ func back(transition: OverlayTransition = .spring)
 | `pageID` | nil / read-only | Active page ID. |
 | `canGoBack` | Read-only | Whether history contains a previous page. |
 
-Use push/back for internal navigation, not another present. Presenting again begins a new retained-page lifetime. Pushing the current ID does nothing; back at the root does nothing. Inactive pages cannot receive touches or accessibility focus. Cached views are released on dismissal, while app models may survive. Page bodies do not scale; container geometry, clipping and content visibility share one animation clock. SwiftUI models update in place; replacing a factory does not recreate a cached ID.
+Use push/back for internal navigation, not another present. Presenting again begins a new retained-page lifetime. Pushing the current ID does nothing; back at the root does nothing. Inactive pages cannot receive touches or accessibility focus. Cached views are released on dismissal, while app models may survive. Page bodies default to no scaling; opt into `contentScaling: .fit` for visual mapping. Container geometry, clipping and content visibility share one animation clock. SwiftUI models update in place; replacing a factory does not recreate a cached ID.
+
+### Page motion
+
+`OverlayPage` and `OverlayPage.swiftUI` both accept `contentLayout` (default `.stable`)
+and `contentScaling: OverlayContentScaling` (default `.none`). Layout and visual
+mapping are independent: `.stable` keeps the destination allocation, `.viewport`
+lays out at the current visible size, and `.fit` uniformly maps that allocation to
+the visible bounds, aligned top-leading (including RTL). `.viewport` plus `.fit`
+has a scale of one. Scaling affects only the library wrapper, not caller transforms
+or `OverlayPageChrome`; chrome stays at its actual point size. Reduce Motion disables
+scaling. Reusing a page ID reuses its initial content and presentation policies.
+
+```swift
+let pages = OverlayPages(controller: controller, transitionStyle: .blurredCrossfade)
+let menu = OverlayPage(id: "menu", layout: .init(width: .fixed(280), height: .fixed(168)),
+                       contentScaling: .fit) { makeMenu() }
+```
+
+`OverlayPageTransitionStyle` defaults to `.sequentialFade` (the previous behavior).
+`.crossfade` overlaps entering and leaving content; `.blurredCrossfade` adds a brief
+native defocus. Styles apply only to page exchanges, not initial presentation or
+final dismissal. All effects share the geometry clock, preserve current values
+on reversal, and release blur resources at rest/cancel. `.immediate` also completes
+effects immediately. Reduce Motion or Reduce Transparency disables defocus.
+The style is fixed for each `OverlayPages` instance; it never interprets page IDs.
 
 ## SwiftUI triggers
 
@@ -324,41 +355,25 @@ OverlayActionBar(leading: UIView, trailing: UIView, center: UIView? = nil,
 | `controlsGuide` | Read-only | UILayoutGuide for additional app-owned controls. |
 | `contentBottomInset` | Derived / read-only | `max(bottomMargin, safeAreaClearance.bottom) + rowHeight + contentSpacing`. |
 
-Set titles/images/loading with the standard UIButton configuration and actions with UIKit APIs. Style changes preserve the existing title, image and activity indicator. Buttons use white foregrounds. OverlayActionBar is a full-viewport chrome view; its leading/trailing wrappers reserve the minimum hit area. When used outside it, reserve those hit bounds yourself.
+Set titles/images/loading with the standard UIButton configuration and actions with UIKit APIs. Style changes preserve the existing title, image and activity indicator. Buttons default to white foregrounds; appearance can override them. OverlayActionBar is a full-viewport chrome view; its leading/trailing wrappers reserve the minimum hit area. When used outside it, reserve those hit bounds yourself.
+
+### Action appearance
+
+```swift
+OverlayActionAppearance(material: Material = .automatic,
+                        backingColor: UIColor? = nil, foregroundColor: UIColor? = nil,
+                        fallbackBackgroundColor: UIColor? = nil)
+```
 
 | Parameter / member | Default | Meaning |
 | --- | --- | --- |
-| `OverlayContentSizing` | Optional protocol | `overlayHeight(forWidth: CGFloat) -> CGFloat` overrides UIKit natural-height fitting. |
-| `OverlayContentSafeArea` | Optional protocol | `overlayExtendsToEdges: Bool` defaults to true; `overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets)` receives additional panel-local clearance. |
-| `OverlayPageChrome` | Optional protocol | `overlayChrome: UIView` supplies a retained foreground layer; live viewport sizing, blank space passes touches to content. |
-| `OverlayPageActivity` | Optional protocol | `overlayPageActivityDidChange(isActive: Bool)` starts/stops app resources as a page becomes active/inactive. |
-
-Without edge opt-in, content gets reduced safe bounds. With `OverlayContentSafeArea`, imagery can fill the panel while your controls honor the supplied clearance (currently Home Indicator clearance at the bottom). Returning false from overlayExtendsToEdges opts back out. Callbacks can occur during geometry updates; do not recursively mutate overlay layout. OverlayPages forwards visible clearance to transitioning visible views; inactive resource ownership is still controlled separately by OverlayPageActivity. Stop cameras, playback and subscriptions when inactive, even though the view is retained.
-
-## Composable content motion (0.2)
-
-`OverlayPage` and `OverlayPage.swiftUI` both accept `contentLayout` (default `.stable`)
-and `contentScaling: OverlayContentScaling` (default `.none`). Layout and visual
-mapping are independent: `.stable` keeps the destination allocation, `.viewport`
-lays out at the current visible size, and `.fit` uniformly maps that allocation to
-the visible bounds, aligned top-leading (including RTL). `.viewport` plus `.fit`
-has a scale of one. Scaling affects only the library wrapper, not caller transforms
-or `OverlayPageChrome`; chrome stays at its actual point size. Reduce Motion disables
-scaling. Reusing a page ID reuses its initial content and presentation policies.
-
-```swift
-let pages = OverlayPages(controller: controller, transitionStyle: .blurredCrossfade)
-let menu = OverlayPage(id: "menu", layout: .init(width: .fixed(280), height: .fixed(168)),
-                       contentScaling: .fit) { makeMenu() }
-```
-
-`OverlayPageTransitionStyle` defaults to `.sequentialFade` (the previous behavior).
-`.crossfade` overlaps entering and leaving content; `.blurredCrossfade` adds a brief
-native defocus. Styles apply only to page exchanges, not initial presentation or
-final dismissal. All effects share the geometry clock, preserve current values
-on reversal, and release blur resources at rest/cancel. `.immediate` also completes
-effects immediately. Reduce Motion or Reduce Transparency disables defocus.
-The style is fixed for each `OverlayPages` instance; it never interprets page IDs.
+| `OverlayActionButton.appearance` | .automatic | Visual treatment independent of actionStyle. |
+| `material` | .automatic | `.automatic`, `.clearGlass` or `.regularGlass`. |
+| `backingColor` | nil | Paint beneath native glass; nil uses no explicit backing. |
+| `foregroundColor` | nil | Overrides the default white foreground. |
+| `fallbackBackgroundColor` | nil | Filled fallback; otherwise uses backingColor or style-derived background. |
+| `.automatic` | Default appearance | Restores actionStyle/accentColor-derived visuals. |
+| `.clearGlass(backingColor:foregroundColor:)` | nil / .white | Convenience appearance; also uses backingColor as its fallback. |
 
 `OverlayActionButton.appearance` defaults to `OverlayActionAppearance.automatic`.
 Explicit appearances can set `material` (`.automatic`, `.clearGlass`, `.regularGlass`),
@@ -374,12 +389,13 @@ button.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
 button.appearance = .automatic // restore actionStyle/accentColor defaults
 ```
 
-Upgrade: existing calls retain their default layout and transition style. Applications
-using a local `.scaled` patch should replace it with `.stable` + `contentScaling: .fit`,
-choose their page transition style explicitly, and configure backing colors at the
-call site. No haptic policy or photo/camera implementation is included.
+### Content protocols
 
-Stable pages also retain their destination safe-area insets when entering/leaving;
-viewport pages receive the live clearance. This prevents bottom-anchored scroll
-positions from being clamped by a transient smaller content inset. Chrome frames
-still follow the visible bounds; a stable page's controls reserve its final clearance.
+| Parameter / member | Default | Meaning |
+| --- | --- | --- |
+| `OverlayContentSizing` | Optional protocol | `overlayHeight(forWidth: CGFloat) -> CGFloat` overrides UIKit natural-height fitting. |
+| `OverlayContentSafeArea` | Optional protocol | `overlayExtendsToEdges: Bool` defaults to true; `overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets)` receives additional panel-local clearance. |
+| `OverlayPageChrome` | Optional protocol | `overlayChrome: UIView` supplies a retained foreground layer; live viewport sizing, blank space passes touches to content. |
+| `OverlayPageActivity` | Optional protocol | `overlayPageActivityDidChange(isActive: Bool)` starts/stops app resources as a page becomes active/inactive. |
+
+Without edge opt-in, content gets reduced safe bounds. With `OverlayContentSafeArea`, imagery can fill the panel while your controls honor the supplied clearance (currently Home Indicator clearance at the bottom). Returning false from overlayExtendsToEdges opts back out. Callbacks can occur during geometry updates; do not recursively mutate overlay layout. Stable pages retain their destination safe-area insets, preventing transient smaller insets from clamping scroll positions. Viewport pages receive live clearance; chrome frames follow visible bounds and stable-page controls reserve final clearance. Inactive resource ownership is still controlled separately by OverlayPageActivity. Stop cameras, playback and subscriptions when inactive, even though the view is retained.

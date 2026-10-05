@@ -49,6 +49,10 @@ func invalidateContentSize(transition: OverlayTransition = .spring)
 
 layout / appearance 参数必须提供。更新不会重新挂载内容。`update` 同时更新几何和外观；其键盘策略为 `nil` 时保持原值。`.spring` 被打断时保留当前运动状态，`.immediate` 立即更新几何。UIKit 自然尺寸变化后调用 `invalidateContentSize`。“减弱动态效果”会立即更新几何，并保留淡入淡出。
 
+如需启用 ProMotion 时序提示，在应用 Info.plist 中将布尔键
+`CADisableMinimumFrameDurationOnPhone` 设为 true，示例工程已启用。实际刷新率仍由系统控制，
+参考 [Apple 的 ProMotion 指引](https://developer.apple.com/documentation/quartzcore/optimizing-iphone-and-ipad-apps-to-support-promotion-displays)。
+
 ### 关闭与取消
 
 ```swift
@@ -177,10 +181,12 @@ func back(transition: OverlayTransition = .spring)
 
 | 参数 / 成员 | 默认值 | 含义 |
 | --- | --- | --- |
+| `transitionStyle` | .sequentialFade | 页面切换效果；同一个 OverlayPages 实例的样式固定。 |
 | `controller` | Required | 由 owner 持有 controller 和 OverlayPages；在 OverlayPages 中为公开只读属性。 |
 | `id` | Required | 稳定的逻辑页面 ID，只读；关闭前相同 ID 复用已缓存视图。 |
 | `layout` | Required | 页面布局，OverlayPage 中可修改。 |
 | `appearance` | .standard | 页面容器外观，可修改。 |
+| `contentScaling` | .none | `.none` 或 `.fit`，视觉映射独立于布局；OverlayPage 中可修改。 |
 | `contentLayout` | .stable | `.stable` 按目标尺寸布局；`.viewport` 跟随动画中的尺寸。可修改；两个构造入口均支持该参数。 |
 | `content / makeContent` | Required | 每个保留 ID 只构造一次。存储为可修改的 makeContent；业务状态由应用持有。 |
 | `anchoredTo / dismissLabel` | Required | 与 controller.present 含义一致。 |
@@ -189,7 +195,20 @@ func back(transition: OverlayTransition = .spring)
 | `pageID` | nil / read-only | 当前页面 ID。 |
 | `canGoBack` | Read-only | 是否有可返回的上一页。 |
 
-内部导航使用 push / back，不要重新 present。重新展示会开始新的页面缓存生命周期。push 当前 ID 或在根页面 back 不执行操作。非活动页面不接收触摸和无障碍焦点。关闭时释放缓存视图，应用模型可继续持有。页面内容不缩放；容器几何、裁切和内容显隐使用同一动画时钟。SwiftUI 模型可原位更新，替换工厂不会重建已经缓存的 ID。
+内部导航使用 push / back，不要重新 present。重新展示会开始新的页面缓存生命周期。push 当前 ID 或在根页面 back 不执行操作。非活动页面不接收触摸和无障碍焦点。关闭时释放缓存视图，应用模型可继续持有。页面内容默认不缩放，可通过 `contentScaling: .fit` 启用视觉映射；容器几何、裁切和内容显隐使用同一动画时钟。SwiftUI 模型可原位更新，替换工厂不会重建已经缓存的 ID。
+
+### 页面动效
+
+`OverlayPage` 及 `OverlayPage.swiftUI` 均支持 `contentLayout`（默认 `.stable`）
+和 `contentScaling`（默认 `.none`）。布局与视觉缩放独立：`.stable` 保留目标尺寸，
+`.viewport` 跟随当前可见尺寸；`.fit` 按比例映射到可见区域，保持顶部起始侧对齐并适配 RTL。
+只变换库的包装层，不覆盖调用方 transform，不缩放 `OverlayPageChrome`。
+同一 page ID 保留初次创建的内容与策略。`.viewport` 与 `.fit` 组合时缩放比例为 1；开启“减弱动态效果”时禁用缩放。
+
+`OverlayPages(controller:transitionStyle:)` 默认 `.sequentialFade`，保持旧行为。
+可显式选择 `.crossfade` 或 `.blurredCrossfade`。仅页面切换使用这些效果；首次打开与最终
+关闭不自动添加模糊。所有效果共用几何时钟，反向切换保留当前值，静止或取消时释放模糊资源。
+`.immediate` 同步完成效果；减少动态效果或降低透明度时禁用模糊。
 
 ## SwiftUI 触发按钮
 
@@ -319,29 +338,25 @@ OverlayActionBar(leading: UIView, trailing: UIView, center: UIView? = nil,
 | `controlsGuide` | Read-only | 用于定位应用额外控件的 UILayoutGuide。 |
 | `contentBottomInset` | Derived / read-only | `max(bottomMargin, safeAreaClearance.bottom) + rowHeight + contentSpacing`。 |
 
-通过标准 UIButton configuration 设置标题、图片与加载状态，通过 UIKit API 设置动作。样式变化会保留标题、图片与加载指示器；按钮前景色为白色。OverlayActionBar 是覆盖整个可见区域的控件层，其两侧包装视图会预留最小点击区域。单独使用按钮时需自行预留该区域。
+通过标准 UIButton configuration 设置标题、图片与加载状态，通过 UIKit API 设置动作。样式变化会保留标题、图片与加载指示器；按钮前景色默认为白色，可通过 appearance 覆盖。OverlayActionBar 是覆盖整个可见区域的控件层，其两侧包装视图会预留最小点击区域。单独使用按钮时需自行预留该区域。
+
+### 按钮外观
+
+```swift
+OverlayActionAppearance(material: Material = .automatic,
+                        backingColor: UIColor? = nil, foregroundColor: UIColor? = nil,
+                        fallbackBackgroundColor: UIColor? = nil)
+```
 
 | 参数 / 成员 | 默认值 | 含义 |
 | --- | --- | --- |
-| `OverlayContentSizing` | Optional protocol | `overlayHeight(forWidth: CGFloat) -> CGFloat` 覆盖 UIKit 自然高度测量。 |
-| `OverlayContentSafeArea` | Optional protocol | `overlayExtendsToEdges: Bool` 默认 true；`overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets)` 接收容器局部的额外安全距离。 |
-| `OverlayPageChrome` | Optional protocol | `overlayChrome: UIView` 提供持有的前景层；按实时可见尺寸布局，空白区域将触摸传递给内容。 |
-| `OverlayPageActivity` | Optional protocol | `overlayPageActivityDidChange(isActive: Bool)` 在页面激活或停用时启动、停止应用资源。 |
-
-默认内容获得扣除安全距离后的区域。采用 `OverlayContentSafeArea` 后，图像可铺满容器，控件遵守传入的额外安全距离（目前主要是底部 Home Indicator）。overlayExtendsToEdges 返回 false 可退回普通模式。几何变化时可能持续回调，不要递归修改弹层布局。OverlayPages 会给过渡中仍可见的视图传递当前安全距离；资源是否活动则独立由 OverlayPageActivity 控制。即使视图仍被缓存，停用时也应停止相机、播放和订阅。
-
-## 可组合内容动效（0.2）
-
-`OverlayPage` 及 `OverlayPage.swiftUI` 均支持 `contentLayout`（默认 `.stable`）
-和 `contentScaling`（默认 `.none`）。布局与视觉缩放独立：`.stable` 保留目标尺寸，
-`.viewport` 跟随当前可见尺寸；`.fit` 按比例映射到可见区域，保持顶部起始侧对齐并适配 RTL。
-只变换库的包装层，不覆盖调用方 transform，不缩放 `OverlayPageChrome`。
-同一 page ID 保留初次创建的内容与策略。减少动态效果时禁用缩放。
-
-`OverlayPages(controller:transitionStyle:)` 默认 `.sequentialFade`，保持旧行为。
-可显式选择 `.crossfade` 或 `.blurredCrossfade`。仅页面切换使用这些效果；首次打开与最终
-关闭不自动添加模糊。所有效果共用几何时钟，反向切换保留当前值，静止或取消时释放模糊资源。
-`.immediate` 同步完成效果；减少动态效果或降低透明度时禁用模糊。
+| `OverlayActionButton.appearance` | .automatic | 独立于 actionStyle 的视觉外观。 |
+| `material` | .automatic | `.automatic`、`.clearGlass` 或 `.regularGlass`。 |
+| `backingColor` | nil | 原生玻璃下方的真实底色；nil 表示不显式绘制底色。 |
+| `foregroundColor` | nil | 覆盖默认的白色前景。 |
+| `fallbackBackgroundColor` | nil | 填充降级背景；未设置时使用 backingColor 或样式派生的背景。 |
+| `.automatic` | 默认外观 | 恢复 actionStyle / accentColor 派生的外观。 |
+| `.clearGlass(backingColor:foregroundColor:)` | nil / .white | 便捷外观；同时使用 backingColor 作为降级背景。 |
 
 `OverlayActionButton.appearance` 默认 `.automatic`。`OverlayActionAppearance` 支持
 `material`（`.automatic`、`.clearGlass`、`.regularGlass`）、`backingColor`、
@@ -350,12 +365,17 @@ OverlayActionBar(leading: UIView, trailing: UIView, center: UIView? = nil,
 旧系统使用填充降级，降低透明度时降级背景不透明；保留系统按钮状态及最小点击范围。
 
 ```swift
-let pages = OverlayPages(controller: controller, transitionStyle: .blurredCrossfade)
 button.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
+button.appearance = .automatic
 ```
 
-升级时旧调用保持兼容；本地 `.scaled` patch 应改用 `.stable` + `contentScaling: .fit`。
-应用显式选择转场与底色。库不包含业务触觉策略、照片或相机实现。
+### 内容协议
 
-稳定布局同时保留目标安全区 inset，避免离场时临时缩小底部 inset 导致滚动位置被夹断。
-`.viewport` 继续接收实时安全区；chrome 的 frame 跟随可见区域，稳定页的控件预留最终安全区。
+| 参数 / 成员 | 默认值 | 含义 |
+| --- | --- | --- |
+| `OverlayContentSizing` | Optional protocol | `overlayHeight(forWidth: CGFloat) -> CGFloat` 覆盖 UIKit 自然高度测量。 |
+| `OverlayContentSafeArea` | Optional protocol | `overlayExtendsToEdges: Bool` 默认 true；`overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets)` 接收容器局部的额外安全距离。 |
+| `OverlayPageChrome` | Optional protocol | `overlayChrome: UIView` 提供持有的前景层；按实时可见尺寸布局，空白区域将触摸传递给内容。 |
+| `OverlayPageActivity` | Optional protocol | `overlayPageActivityDidChange(isActive: Bool)` 在页面激活或停用时启动、停止应用资源。 |
+
+默认内容获得扣除安全距离后的区域。采用 `OverlayContentSafeArea` 后，图像可铺满容器，控件遵守传入的额外安全距离（目前主要是底部 Home Indicator）。overlayExtendsToEdges 返回 false 可退回普通模式。几何变化时可能持续回调，不要递归修改弹层布局。稳定布局保留目标安全区，避免临时缩小底部 inset 导致滚动位置被夹断；`.viewport` 接收实时安全距离。chrome 的 frame 跟随可见区域，稳定页的控件预留最终安全区。资源是否活动则独立由 OverlayPageActivity 控制。即使视图仍被缓存，停用时也应停止相机、播放和订阅。

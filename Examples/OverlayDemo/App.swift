@@ -18,7 +18,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
     guard let scene = scene as? UIWindowScene else { return }
     let window = UIWindow(windowScene: scene)
-    window.rootViewController = UINavigationController(rootViewController: DemoController())
+    let root: UIViewController = ProcessInfo.processInfo.arguments.contains("--showcase")
+      ? ShowcaseController() : DemoController()
+    window.rootViewController = UINavigationController(rootViewController: root)
     window.makeKeyAndVisible()
     self.window = window
   }
@@ -187,6 +189,14 @@ final class DemoController: UIViewController, UITextViewDelegate, PHPickerViewCo
     let demos = UIStackView(arrangedSubviews: [dynamicUIKit, checks])
     demos.distribution = .fillEqually
     controls.addArrangedSubview(demos)
+    let showcase = UIButton(type: .system)
+    showcase.setTitle("Showcase", for: .normal)
+    showcase.addAction(UIAction { [weak self] _ in
+      guard let self else { return }
+      self.overlay.cancel()
+      self.navigationController?.pushViewController(ShowcaseController(), animated: true)
+    }, for: .touchUpInside)
+    controls.addArrangedSubview(showcase)
     let swiftLabel = UILabel()
     swiftLabel.text = "SwiftUI trigger + content"
     swiftLabel.font = .preferredFont(forTextStyle: .subheadline)

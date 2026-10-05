@@ -6,6 +6,7 @@ group = project.main_group.new_group('OverlayDemo', 'OverlayDemo')
 Dir.glob(File.join(root, 'Examples/OverlayDemo/*.swift')).sort.each do |path|
   target.source_build_phase.add_file_reference(group.new_file(File.basename(path)))
 end
+group.new_file('Info.plist')
 photos = group.new_file('Photos')
 photos.last_known_file_type = 'folder'
 target.resources_build_phase.add_file_reference(photos)
@@ -24,6 +25,7 @@ target.build_configurations.each do |config|
     'PRODUCT_BUNDLE_IDENTIFIER' => 'dev.rien7.AnchoredOverlayDemo',
     'SWIFT_VERSION' => '6.0',
     'GENERATE_INFOPLIST_FILE' => 'YES',
+    'INFOPLIST_FILE' => 'OverlayDemo/Info.plist',
     'INFOPLIST_KEY_UIApplicationSceneManifest_Generation' => 'YES',
     'INFOPLIST_KEY_UILaunchScreen_Generation' => 'YES',
     'INFOPLIST_KEY_UISupportedInterfaceOrientations' => 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight',

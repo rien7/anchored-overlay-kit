@@ -13,10 +13,13 @@
 		6D25AA1580F0C14BADAA3FE2 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A0B1D47A876320B4B859A234 /* Foundation.framework */; };
 		6ED62AC995877DD94A1C9D49 /* DynamicDemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECBFFA29695E008CC2AC2AD /* DynamicDemo.swift */; };
 		8334E41A37BED6CA03BE4FB3 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = D711CFDCE00022C9ECFB1324 /* App.swift */; };
+		90F2CBE609EA25CF7D631B72 /* ShowcaseController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECBF59B3BD207182A5536A6 /* ShowcaseController.swift */; };
 		DD232EAAC4C2445653260ABA /* Photos in Resources */ = {isa = PBXBuildFile; fileRef = A1294E1A21DDBCDF7157418D /* Photos */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		08C8598518E7F972F1240D77 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0ECBF59B3BD207182A5536A6 /* ShowcaseController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShowcaseController.swift; sourceTree = "<group>"; };
 		0ECBFFA29695E008CC2AC2AD /* DynamicDemo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DynamicDemo.swift; sourceTree = "<group>"; };
 		A0B1D47A876320B4B859A234 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		A1294E1A21DDBCDF7157418D /* Photos */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = Photos; sourceTree = "<group>"; };
@@ -55,6 +58,8 @@
 				D35B0472277952E0503240E6 /* RecentPhotosDemo.swift */,
 				A1294E1A21DDBCDF7157418D /* Photos */,
 				A2F49E634FD7CE955DCFE0E3 /* ReliabilityDemo.swift */,
+				0ECBF59B3BD207182A5536A6 /* ShowcaseController.swift */,
+				08C8598518E7F972F1240D77 /* Info.plist */,
 			);
 			name = OverlayDemo;
 			path = OverlayDemo;
@@ -160,6 +165,7 @@
 				6ED62AC995877DD94A1C9D49 /* DynamicDemo.swift in Sources */,
 				0EA70F62480572C36DCF1B56 /* RecentPhotosDemo.swift in Sources */,
 				517768620B7F5E451E59D818 /* ReliabilityDemo.swift in Sources */,
+				90F2CBE609EA25CF7D631B72 /* ShowcaseController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -235,6 +241,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OverlayDemo/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -310,6 +317,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OverlayDemo/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
