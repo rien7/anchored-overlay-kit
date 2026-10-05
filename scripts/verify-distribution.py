@@ -47,12 +47,19 @@ def main():
     assert spec['version'] == json.loads(manifest.read_text())['version']
     assert spec['source']['tag'] == spec['version']
     (HOST / 'App.swift').write_text('''import UIKit
+import SwiftUI
 import AnchoredOverlayKit
 @main final class App: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     let overlay = AnchoredOverlayController()
     func application(_ app: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         overlay.anchorTransition = .fade
+        let pages = OverlayPages(controller: overlay, transitionStyle: .blurredCrossfade)
+        let page = OverlayPage.swiftUI(id: "swiftui", layout: .init(width: .fixed(200), height: .fixed(100)),
+          contentLayout: .stable, contentScaling: .fit) { Text("Preview") }
+        let button = OverlayActionButton()
+        button.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
+        _ = (pages, page, button)
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = UIViewController()
         window.rootViewController?.view.backgroundColor = .systemBackground
@@ -110,7 +117,7 @@ end
         print(f'Building {scheme} from installed npm artifact...', flush=True)
         run(['xcodebuild', '-workspace', 'Distribution.xcworkspace', '-scheme', scheme,
              '-configuration', 'Debug', '-destination', 'generic/platform=iOS Simulator',
-             'build'], cwd=HOST, log=f'{scheme}-build.log')
+             'clean', 'build'], cwd=HOST, log=f'{scheme}-build.log')
     (OUT / 'result.json').write_text(json.dumps({
         'status': 'passed', 'version': spec['version'], 'tarball': packed['filename'],
         'integrity': packed['integrity'], 'files': sorted(paths),

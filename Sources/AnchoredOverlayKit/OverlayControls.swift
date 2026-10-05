@@ -19,9 +19,30 @@ public struct OverlayControlMetrics: Sendable {
 
 public enum OverlayActionStyle: Sendable { case neutral, emphasized }
 
+/// Visual treatment independent of action importance. nil colors inherit the
+/// action style. Dynamic UIColors are resolved again when traits change.
+@MainActor public struct OverlayActionAppearance {
+  public enum Material: Sendable { case automatic, clearGlass, regularGlass }
+  public var material: Material
+  public var backingColor: UIColor?
+  public var foregroundColor: UIColor?
+  public var fallbackBackgroundColor: UIColor?
+  public init(material: Material = .automatic, backingColor: UIColor? = nil,
+              foregroundColor: UIColor? = nil, fallbackBackgroundColor: UIColor? = nil) {
+    self.material = material; self.backingColor = backingColor
+    self.foregroundColor = foregroundColor; self.fallbackBackgroundColor = fallbackBackgroundColor
+  }
+  public static var automatic: Self { Self() }
+  public static func clearGlass(backingColor: UIColor? = nil, foregroundColor: UIColor = .white) -> Self {
+    Self(material: .clearGlass, backingColor: backingColor, foregroundColor: foregroundColor,
+         fallbackBackgroundColor: backingColor)
+  }
+}
+
 /// A native glass control with a separate minimum hit area. Its parent must reserve
 /// the hit area (OverlayActionBar does this); visual bounds remain unchanged.
 @MainActor public final class OverlayActionButton: UIButton {
+  public var appearance: OverlayActionAppearance = .automatic { didSet { applyStyle() } }
   public let metrics: OverlayControlMetrics
   public var actionStyle: OverlayActionStyle = .neutral { didSet { if oldValue != actionStyle { applyStyle() } } }
   public var accentColor: UIColor = .systemBlue { didSet { if !oldValue.isEqual(accentColor) { applyStyle() } } }
@@ -30,16 +51,41 @@ public enum OverlayActionStyle: Sendable { case neutral, emphasized }
     self.metrics = metrics
     super.init(frame: .zero)
     applyStyle()
+    NotificationCenter.default.addObserver(self, selector: #selector(transparencyChanged),
+      name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
+  }
+  deinit { NotificationCenter.default.removeObserver(self) }
+  @objc private func transparencyChanged() { applyStyle() }
+  public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    if previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) != false { applyStyle() }
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   private func applyStyle() {
     let old = configuration
     var next: UIButton.Configuration
-    if #available(iOS 26.0, *) {
-      next = actionStyle == .neutral ? .prominentClearGlass() : .prominentGlass()
-    } else { next = .filled() }
-    next.baseBackgroundColor = actionStyle == .neutral ? .black.withAlphaComponent(0.35) : accentColor
-    next.baseForegroundColor = .white
+    let inheritedBackground: UIColor = actionStyle == .neutral ? .black.withAlphaComponent(0.35) : accentColor
+    let reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
+    backgroundColor = .clear
+    if #available(iOS 26.0, *), !reduceTransparency {
+      switch appearance.material {
+      case .automatic:
+        next = actionStyle == .neutral ? .prominentClearGlass() : .prominentGlass()
+        next.baseBackgroundColor = inheritedBackground
+      case .clearGlass:
+        next = .clearGlass()
+      case .regularGlass:
+        next = .glass()
+      }
+      // Backing is real paint below the material, not a glass tint.
+      backgroundColor = appearance.backingColor
+    } else {
+      next = .filled()
+      let fallback = appearance.fallbackBackgroundColor ?? appearance.backingColor ?? inheritedBackground
+      // Reduced transparency must not leave a translucent fallback surface.
+      next.baseBackgroundColor = reduceTransparency ? fallback.resolvedColor(with: traitCollection).withAlphaComponent(1) : fallback
+    }
+    next.baseForegroundColor = appearance.foregroundColor ?? .white
     next.cornerStyle = .capsule
     next.titleLineBreakMode = .byTruncatingTail
     next.preferredSymbolConfigurationForImage = metrics.symbolConfiguration
@@ -47,6 +93,12 @@ public enum OverlayActionStyle: Sendable { case neutral, emphasized }
     next.title = old?.title; next.image = old?.image
     next.showsActivityIndicator = old?.showsActivityIndicator ?? false
     configuration = next
+  }
+  public override func layoutSubviews() {
+    super.layoutSubviews()
+    // Round the backing without clipping native highlights or shadows.
+    layer.cornerRadius = min(bounds.width, bounds.height) / 2
+    layer.cornerCurve = .continuous
   }
   private var hitBounds: CGRect {
     bounds.insetBy(dx: -max(0, (metrics.hitSize - bounds.width) / 2),

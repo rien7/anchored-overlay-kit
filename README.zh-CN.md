@@ -54,10 +54,10 @@ https://github.com/user-attachments/assets/59b63b54-1145-40c7-9fe5-cc145b221bec
 https://github.com/rien7/anchored-overlay-kit.git
 ```
 
-选择 **0.1.4** 或更新版本，将 **AnchoredOverlayKit** 产品加入应用 target。使用 Package.swift 时添加：
+选择 **0.2.0** 或更新版本，将 **AnchoredOverlayKit** 产品加入应用 target。使用 Package.swift 时添加：
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.1.4")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.2.0")
 ```
 
 并在使用方 target 的 dependencies 中加入 `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")`。
@@ -78,7 +78,7 @@ package_json = Pod::Executable.execute_command('node', [
 pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-如果从原生模块中导入本库，还需要在该模块的 podspec 中声明 `s.dependency 'AnchoredOverlayKit', '~> 0.1.0'`。运行 `pod install` 后重新构建原生应用。同一 target 选择 CocoaPods 或 SPM 其中一种方式。
+如果从原生模块中导入本库，还需要在该模块的 podspec 中声明 `s.dependency 'AnchoredOverlayKit', '~> 0.2.0'`。运行 `pod install` 后重新构建原生应用。同一 target 选择 CocoaPods 或 SPM 其中一种方式。
 
 Expo 项目应把 extra pod 写进持久化的 app config，再执行 prebuild，参考 [Expo 接入示例](INTEGRATION.md#expo-prebuild)。Expo Go 无法加载本库。
 

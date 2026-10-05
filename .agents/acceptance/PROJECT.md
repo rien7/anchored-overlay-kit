@@ -95,7 +95,7 @@ Lifecycle and reactive pages:
 
 Coordinated content motion:
 - Pages share the controller's display-link clock for geometry and retained visibility
-  springs. Bodies never scale: stable allocations are clipped, viewport bodies fill
+  springs. Bodies default to no scaling: stable allocations are clipped, viewport bodies fill
   the live panel, and optional chrome tracks live bounds. Reversal changes targets
   without resetting position, visibility or velocity. Capture transition video.
 - Reliability samples real surface identity, stable/viewport bounds, fixed 44pt
@@ -122,3 +122,7 @@ Distribution checks:
 - Evidence is in `.artifacts/distribution`: pack.json, podspec.json, build logs
   and result.json. Packaging-only changes use these CLI checks; native behavior
   changes still require the simulator scenarios above.
+
+- 0.2 reliability covers opt-in fit scaling, three transition styles, reversal, blur cleanup,
+  caller transforms, fixed chrome, explicit backing and automatic appearance restoration.
+  The pages scene opts into fit/blurredCrossfade and a media backing for visual review.

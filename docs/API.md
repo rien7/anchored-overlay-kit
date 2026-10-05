@@ -2,7 +2,7 @@
 
 [English](API.md) · [简体中文](API.zh-CN.md) · [README](../README.md)
 
-Public API for **0.1.4**. Sizes are in points. `Required` means there is no default argument. Run presentation and UIKit operations on the main actor. Swift signatures below describe the API; they are not a single executable example.
+Public API for **0.2.0**. Sizes are in points. `Required` means there is no default argument. Run presentation and UIKit operations on the main actor. Swift signatures below describe the API; they are not a single executable example.
 
 ## Controller
 
@@ -154,13 +154,17 @@ Device concentricity requires equal horizontal/bottom window-edge spacing withou
 ## Retained pages
 
 ```swift
-OverlayPages(controller: AnchoredOverlayController)
+OverlayPages(controller: AnchoredOverlayController,
+             transitionStyle: OverlayPageTransitionStyle = .sequentialFade)
 OverlayPage(id: String, layout: OverlayLayout,
             appearance: OverlayAppearance = .standard,
             contentLayout: OverlayPageContentLayout = .stable,
+            contentScaling: OverlayContentScaling = .none,
             content: @escaping () -> UIView)
 OverlayPage.swiftUI(id: String, layout: OverlayLayout,
                     appearance: OverlayAppearance = .standard,
+                    contentLayout: OverlayPageContentLayout = .stable,
+                    contentScaling: OverlayContentScaling = .none,
                     @ViewBuilder content: @escaping () -> Content)
 
 @discardableResult
@@ -177,7 +181,7 @@ func back(transition: OverlayTransition = .spring)
 | `id` | Required | Stable logical page ID; read-only. Same ID reuses its cached view until dismissal. |
 | `layout` | Required | Page layout; mutable value on OverlayPage. |
 | `appearance` | .standard | Page container appearance; mutable. |
-| `contentLayout` | .stable | `.stable` lays out at the destination size; `.viewport` follows animated bounds. Mutable. swiftUI factory uses .stable initially. |
+| `contentLayout` | .stable | `.stable` lays out at the destination size; `.viewport` follows animated bounds. Mutable. Both initializers accept this policy. |
 | `content / makeContent` | Required | Factory runs once per retained ID. Stored as mutable makeContent; business state remains app-owned. |
 | `anchoredTo / dismissLabel` | Required | Same meanings as controller.present. |
 | `allowsKeyboardOverlap` | true | Presentation keyboard policy. |
@@ -292,3 +296,52 @@ Set titles/images/loading with the standard UIButton configuration and actions w
 | `OverlayPageActivity` | Optional protocol | `overlayPageActivityDidChange(isActive: Bool)` starts/stops app resources as a page becomes active/inactive. |
 
 Without edge opt-in, content gets reduced safe bounds. With `OverlayContentSafeArea`, imagery can fill the panel while your controls honor the supplied clearance (currently Home Indicator clearance at the bottom). Returning false from overlayExtendsToEdges opts back out. Callbacks can occur during geometry updates; do not recursively mutate overlay layout. OverlayPages forwards visible clearance to transitioning visible views; inactive resource ownership is still controlled separately by OverlayPageActivity. Stop cameras, playback and subscriptions when inactive, even though the view is retained.
+
+## Composable content motion (0.2)
+
+`OverlayPage` and `OverlayPage.swiftUI` both accept `contentLayout` (default `.stable`)
+and `contentScaling: OverlayContentScaling` (default `.none`). Layout and visual
+mapping are independent: `.stable` keeps the destination allocation, `.viewport`
+lays out at the current visible size, and `.fit` uniformly maps that allocation to
+the visible bounds, aligned top-leading (including RTL). `.viewport` plus `.fit`
+has a scale of one. Scaling affects only the library wrapper, not caller transforms
+or `OverlayPageChrome`; chrome stays at its actual point size. Reduce Motion disables
+scaling. Reusing a page ID reuses its initial content and presentation policies.
+
+```swift
+let pages = OverlayPages(controller: controller, transitionStyle: .blurredCrossfade)
+let menu = OverlayPage(id: "menu", layout: .init(width: .fixed(280), height: .fixed(168)),
+                       contentScaling: .fit) { makeMenu() }
+```
+
+`OverlayPageTransitionStyle` defaults to `.sequentialFade` (the previous behavior).
+`.crossfade` overlaps entering and leaving content; `.blurredCrossfade` adds a brief
+native defocus. Styles apply only to page exchanges, not initial presentation or
+final dismissal. All effects share the geometry clock, preserve current values
+on reversal, and release blur resources at rest/cancel. `.immediate` also completes
+effects immediately. Reduce Motion or Reduce Transparency disables defocus.
+The style is fixed for each `OverlayPages` instance; it never interprets page IDs.
+
+`OverlayActionButton.appearance` defaults to `OverlayActionAppearance.automatic`.
+Explicit appearances can set `material` (`.automatic`, `.clearGlass`, `.regularGlass`),
+`backingColor`, `foregroundColor` and `fallbackBackgroundColor`. A backing is actual
+paint beneath the material, independent of glass tint. Explicit appearance applies
+to either action style; reset to `.automatic` when restoring style-derived visuals.
+Dynamic UIColors remain supported. Old systems use a filled fallback; Reduce
+Transparency resolves the fallback to an opaque color. Native button state handling
+and the minimum hit target remain intact. No app-specific backing opacity is default.
+
+```swift
+button.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
+button.appearance = .automatic // restore actionStyle/accentColor defaults
+```
+
+Upgrade: existing calls retain their default layout and transition style. Applications
+using a local `.scaled` patch should replace it with `.stable` + `contentScaling: .fit`,
+choose their page transition style explicitly, and configure backing colors at the
+call site. No haptic policy or photo/camera implementation is included.
+
+Stable pages also retain their destination safe-area insets when entering/leaving;
+viewport pages receive the live clearance. This prevents bottom-anchored scroll
+positions from being clamped by a transient smaller content inset. Chrome frames
+still follow the visible bounds; a stable page's controls reserve its final clearance.

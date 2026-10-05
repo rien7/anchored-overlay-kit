@@ -7,12 +7,12 @@ import UIKit
   private var onSelect: ((String) -> Void)?
   init(controller: AnchoredOverlayController) {
     controller.anchorTransition = .fade
-    pages = OverlayPages(controller: controller)
+    pages = OverlayPages(controller: controller, transitionStyle: .blurredCrossfade)
   }
 
   func present(from anchor: UIView, allowsKeyboardOverlap: Bool, onSelect: @escaping (String) -> Void) {
     self.onSelect = onSelect
-    let menu = OverlayPage(id: "attachments", layout: OverlayLayout(width: .fixed(280), height: .fixed(168))) { [weak self] in
+    let menu = OverlayPage(id: "attachments", layout: OverlayLayout(width: .fixed(280), height: .fixed(168)), contentScaling: .fit) { [weak self] in
       let stack = UIStackView()
       stack.axis = .vertical
       stack.distribution = .fillEqually
@@ -64,6 +64,7 @@ import UIKit
   init(back onBack: @escaping () -> Void, close: @escaping () -> Void,
        library: @escaping () -> Void) {
     super.init(frame: .zero)
+    back.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
     back.configuration?.image = UIImage(systemName: "chevron.left")
     back.accessibilityLabel = "Back"
     back.accessibilityIdentifier = "photos-back"

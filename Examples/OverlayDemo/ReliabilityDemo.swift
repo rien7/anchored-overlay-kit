@@ -167,8 +167,15 @@ import UIKit
         try? await Task.sleep(for: .milliseconds(100))
         destination.frame.origin = CGPoint(x: 200, y: 240)
         try? await Task.sleep(for: .milliseconds(250))
-        let frame = visual.convert(visual.bounds, to: window)
-        check(abs(frame.minX - 200) < 15 && abs(frame.minY - 240) < 15, "destination-tracks-layout")
+        // Keyboard hosts may live in another scene. UIView cross-window
+        // conversion is undefined there; measure through display coordinates.
+        if let host = visual.window {
+          let local = visual.convert(visual.bounds, to: host)
+          let screen = host.convert(local, to: host.screen.coordinateSpace)
+          let frame = window.convert(screen, from: window.screen.coordinateSpace)
+          check(frame.minX.isFinite && frame.minY.isFinite
+                && abs(frame.minX - 200) < 15 && abs(frame.minY - 240) < 15, "destination-tracks-layout")
+        } else { check(false, "destination-tracking-detached") }
         destination.removeFromSuperview()
         try? await Task.sleep(for: .milliseconds(1000))
         check(movingResult == .dismissed && !controller.isPresented, "destination-removed-fades")
@@ -192,6 +199,7 @@ import UIKit
       try? await Task.sleep(for: .milliseconds(600))
       let panel = stable.superview?.superview?.superview?.superview
       let rootSize = stable.bounds.size
+      let rootInset = stable.inset
       let expandedPage = OverlayPage(id: "continuous-media", layout: .expandingToBottom(inset: 12),
                                     contentLayout: .viewport) { viewport }
       pages.push(expandedPage)
@@ -199,6 +207,7 @@ import UIKit
         try? await Task.sleep(for: .milliseconds(16))
         check(stable.superview?.superview?.superview?.superview === panel, "continuous-surface-identity")
         check(stable.bounds.size == rootSize, "continuous-stable-allocation")
+        check(stable.inset == rootInset, "continuous-stable-insets")
         check(viewport.bounds.size == viewport.overlayChrome.bounds.size, "continuous-viewport")
         check(viewport.transform.isIdentity && viewport.superview?.transform.isIdentity == true,
               "continuous-no-scaling")
@@ -219,6 +228,49 @@ import UIKit
       check(sameSize.superview?.alpha == 1 && viewport.superview?.alpha == 0, "same-size-content-transition")
       check(sameSize.superview?.superview?.superview?.superview === panel, "same-size-surface-identity")
       controller.cancel()
+      // Public composition API: effects must not own layout or caller transforms.
+      for style in [OverlayPageTransitionStyle.sequentialFade, .crossfade, .blurredCrossfade] {
+        let composed = OverlayPages(controller: controller, transitionStyle: style)
+        let menu = ContinuousProbe()
+        let media = ContinuousProbe()
+        let callerTransform = CGAffineTransform(translationX: 2, y: 3)
+        menu.transform = callerTransform
+        composed.present(OverlayPage(id: "scaled", layout: compact, contentScaling: .fit) { menu },
+                         anchoredTo: anchor, dismissLabel: "Close")
+        var observedScale = false
+        for _ in 0..<25 {
+          try? await Task.sleep(for: .milliseconds(16))
+          if let scale = menu.superview?.transform.a, scale < 0.98 { observedScale = true }
+          check(menu.transform == callerTransform, "scaling-preserves-caller-transform")
+          check(menu.button.bounds.size == CGSize(width: 44, height: 44), "scaled-chrome-remains-fixed")
+        }
+        check(observedScale || UIAccessibility.isReduceMotionEnabled, "fit-maps-visible-panel")
+        let mediaPage = OverlayPage(id: "fixed", layout: .expandingToBottom(inset: 12)) { media }
+        composed.push(mediaPage)
+        var observedBlur = false
+        for sample in 0..<45 {
+          try? await Task.sleep(for: .milliseconds(16))
+          check(media.superview?.transform.isIdentity == true, "media-default-remains-unscaled")
+          observedBlur = observedBlur || (menu.superview?.subviews.contains { $0 is UIVisualEffectView } == true)
+          if sample == 5 || sample == 9 {
+            let transform = menu.superview?.transform
+            let alpha = menu.superview?.alpha
+            if sample == 5 { composed.back() } else { composed.push(mediaPage) }
+            check(menu.superview?.transform == transform && menu.superview?.alpha == alpha,
+                  "composed-reversal-retains-current-values")
+          }
+        }
+        let expectedBlur = style == .blurredCrossfade && !UIAccessibility.isReduceMotionEnabled
+          && !UIAccessibility.isReduceTransparencyEnabled
+        check(observedBlur == expectedBlur, "blur-is-opt-in")
+        check(media.superview?.subviews.contains { $0 is UIVisualEffectView } == false,
+              "settled-page-releases-blur")
+        composed.back(transition: .immediate)
+        check(media.superview?.isHidden == true, "immediate-hides-outgoing-page")
+        check(menu.superview?.subviews.contains { $0 is UIVisualEffectView } == false,
+              "immediate-clears-blur")
+        controller.cancel()
+      }
       if let window = anchor.window, let presenter = window.rootViewController {
         // Public continuation API: completion timing, stale callbacks, owner validity.
         for mode in ["complete", "cancel", "replace", "invalid", "open-failed"] {
@@ -273,6 +325,16 @@ import UIKit
         button.actionStyle = .emphasized
         check(button.configuration?.title == "Add 2 items" && button.configuration?.showsActivityIndicator == true,
               "action-style-preserves-content")
+        let backing = UIColor.black.withAlphaComponent(0.6)
+        button.appearance = .clearGlass(backingColor: backing)
+        if #available(iOS 26.0, *), !UIAccessibility.isReduceTransparencyEnabled {
+          check(button.backgroundColor == backing, "explicit-backing-is-real-fill")
+          check(button.configuration?.baseBackgroundColor == nil, "backing-is-not-glass-tint")
+        }
+        check(button.configuration?.title == "Add 2 items" && button.configuration?.showsActivityIndicator == true,
+              "appearance-preserves-content")
+        button.appearance = .automatic
+        check(button.backgroundColor == .clear || button.backgroundColor == nil, "automatic-clears-backing")
         let back = OverlayActionButton()
         let bar = OverlayActionBar(leading: back, trailing: button)
         bar.frame = CGRect(x: 0, y: 0, width: 360, height: 500)

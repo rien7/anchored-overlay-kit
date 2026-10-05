@@ -22,7 +22,7 @@ pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 The consuming native module's podspec must also declare its dependency:
 
 ```ruby
-s.dependency 'AnchoredOverlayKit', '~> 0.1.0'
+s.dependency 'AnchoredOverlayKit', '~> 0.2.0'
 ```
 
 Run `pod install` and rebuild the application. Do not add the same library through
@@ -267,7 +267,10 @@ does not own media or attachment state.
 
 `OverlayPages` retains one panel, mask and material through push/back. The panel's
 geometry and page visibility share the display-link clock. Retargeting preserves
-current positions and velocities; page bodies are never scaled.
+current positions and velocities. Page bodies are unscaled by default; opt into
+`contentScaling: .fit` for proportional visual mapping without changing layout.
+`OverlayPages(transitionStyle:)` independently selects sequential fading, crossfading
+or blurred crossfading. See docs/API.md for compatibility and accessibility behavior.
 
 - `OverlayPage(contentLayout: .stable)` (default) allocates content at the final
   page size and clips it through the moving panel. Use for menus, text and grids;

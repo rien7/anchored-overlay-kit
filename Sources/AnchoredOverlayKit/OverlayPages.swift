@@ -5,6 +5,14 @@ import UIKit
 /// Viewport content follows the visible panel without scaling (e.g. a viewfinder).
 public enum OverlayPageContentLayout: Sendable { case stable, viewport }
 
+/// Visual mapping only; never changes the caller's layout or transform.
+public enum OverlayContentScaling: Sendable { case none, fit }
+
+/// Page exchange effects, independent of the geometry clock (.spring/.immediate).
+public enum OverlayPageTransitionStyle: Sendable {
+  case sequentialFade, crossfade, blurredCrossfade
+}
+
 /// A caller-owned foreground layer, mounted separately from the page body.
 /// The library supplies its visible bounds and safe-area clearance. Lay out
 /// controls in these bounds; empty space passes touches through to the body.
@@ -17,17 +25,22 @@ public enum OverlayPageContentLayout: Sendable { case stable, viewport }
   public let id: String
   public var layout: OverlayLayout
   public var appearance: OverlayAppearance
+  public var contentScaling: OverlayContentScaling
   public var contentLayout: OverlayPageContentLayout
   public var makeContent: () -> UIView
 
   public init(id: String, layout: OverlayLayout, appearance: OverlayAppearance = .standard,
-              contentLayout: OverlayPageContentLayout = .stable, content: @escaping () -> UIView) {
-    self.id = id; self.layout = layout; self.appearance = appearance; self.contentLayout = contentLayout; makeContent = content
+              contentLayout: OverlayPageContentLayout = .stable,
+              contentScaling: OverlayContentScaling = .none, content: @escaping () -> UIView) {
+    self.id = id; self.layout = layout; self.appearance = appearance
+    self.contentLayout = contentLayout; self.contentScaling = contentScaling; makeContent = content
   }
 
   public static func swiftUI<Content: View>(id: String, layout: OverlayLayout,
-      appearance: OverlayAppearance = .standard, @ViewBuilder content: @escaping () -> Content) -> Self {
-    Self(id: id, layout: layout, appearance: appearance) {
+      appearance: OverlayAppearance = .standard,
+      contentLayout: OverlayPageContentLayout = .stable, contentScaling: OverlayContentScaling = .none,
+      @ViewBuilder content: @escaping () -> Content) -> Self {
+    Self(id: id, layout: layout, appearance: appearance, contentLayout: contentLayout, contentScaling: contentScaling) {
       OverlayHostingContent(content: content())
     }
   }
@@ -50,13 +63,19 @@ public enum OverlayPageContentLayout: Sendable { case stable, viewport }
   public private(set) var pageID: String?
   public var canGoBack: Bool { history.count > 1 }
   private var history: [OverlayPage] = []
-  private var host = PageHost()
+  public let transitionStyle: OverlayPageTransitionStyle
+  private var host: PageHost
 
-  public init(controller: AnchoredOverlayController) { self.controller = controller }
+  public init(controller: AnchoredOverlayController,
+              transitionStyle: OverlayPageTransitionStyle = .sequentialFade) {
+    self.controller = controller
+    self.transitionStyle = transitionStyle
+    host = PageHost(style: transitionStyle)
+  }
 
   @discardableResult public func present(_ page: OverlayPage, anchoredTo anchor: UIView,
                       dismissLabel: String, allowsKeyboardOverlap: Bool = true) -> OverlayPresentationResult {
-    let candidate = PageHost()
+    let candidate = PageHost(style: transitionStyle)
     candidate.onDismiss = { [weak self, weak candidate] in
       guard let self, self.host === candidate else { return }
       self.history = []; self.pageID = nil
@@ -108,17 +127,55 @@ public enum OverlayPageContentLayout: Sendable { case stable, viewport }
     let wrapper = UIView()
     let chromeHost = ChromeHost()
     let chrome: UIView?
+    let scaling: OverlayContentScaling
+    var blur: UIVisualEffectView?
+    var blurAnimator: UIViewPropertyAnimator?
     let layout: OverlayPageContentLayout
     var visibility = OverlaySpring(value: 0)
     var allocation = CGSize.zero
+    var allocationInsets = UIEdgeInsets.zero
     init(_ page: OverlayPage) {
       view = page.makeContent()
       layout = page.contentLayout
+      scaling = page.contentScaling
       chrome = (view as? OverlayPageChrome)?.overlayChrome
+      wrapper.layer.anchorPoint = .zero
       wrapper.addSubview(view)
       if let chrome { chromeHost.addSubview(chrome) }
     }
+    func setBlur(_ fraction: CGFloat) {
+      guard fraction > 0 else { clearBlur(); return }
+      if blurAnimator == nil {
+        let effect = UIVisualEffectView(effect: nil)
+        effect.isUserInteractionEnabled = false
+        effect.accessibilityElementsHidden = true
+        effect.frame = wrapper.bounds
+        wrapper.addSubview(effect)
+        blur = effect
+        let animator = UIViewPropertyAnimator(duration: 1, curve: .linear) { [weak effect] in
+          effect?.effect = UIBlurEffect(style: .regular)
+        }
+        animator.pausesOnCompletion = true
+        animator.startAnimation()
+        animator.pauseAnimation()
+        blurAnimator = animator
+      }
+      blur?.frame = wrapper.bounds
+      blurAnimator?.fractionComplete = fraction
+    }
+    func clearBlur() {
+      blurAnimator?.stopAnimation(true)
+      blurAnimator = nil
+      blur?.removeFromSuperview()
+      blur = nil
+    }
   }
+  private let style: OverlayPageTransitionStyle
+  init(style: OverlayPageTransitionStyle) {
+    self.style = style
+    super.init(frame: .zero)
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   private var pages: [String: Entry] = [:]
   private var current: Entry?
   private var transitioning = false
@@ -129,6 +186,7 @@ public enum OverlayPageContentLayout: Sendable { case stable, viewport }
     let previous = current
     let dismissed = onDismiss
     for entry in pages.values {
+      entry.clearBlur()
       entry.wrapper.removeFromSuperview()
       entry.chromeHost.removeFromSuperview()
     }
@@ -165,6 +223,7 @@ public enum OverlayPageContentLayout: Sendable { case stable, viewport }
       entry.wrapper.accessibilityElementsHidden = entry !== next
       entry.chromeHost.accessibilityElementsHidden = entry !== next
       if !animated {
+        entry.clearBlur()
         entry.visibility = OverlaySpring(value: entry === next ? 1 : 0)
         entry.wrapper.alpha = entry.visibility.value
         entry.chromeHost.alpha = entry.visibility.value
@@ -200,20 +259,39 @@ public enum OverlayPageContentLayout: Sendable { case stable, viewport }
       let visible = selected || entry.visibility.value > 0 || entry.visibility.velocity != 0
       entry.wrapper.isHidden = !visible
       entry.chromeHost.isHidden = !visible
-      guard visible else { continue }
+      guard visible else { entry.clearBlur(); continue }
       let size = entry.layout == .viewport ? visibleSize : entry.allocation
-      entry.wrapper.frame = CGRect(origin: .zero, size: size)
+      entry.wrapper.bounds = CGRect(origin: .zero, size: size)
+      // Existing content is top-leading aligned. Resolve leading at render time
+      // so the visual mapping follows the same rule in both layout directions.
+      var scale: CGFloat = 1
+      if entry.scaling == .fit && !reducingMotion && size.width > 0 && size.height > 0 {
+        scale = max(0.001, min(visibleSize.width / size.width, visibleSize.height / size.height))
+      }
+      let x = effectiveUserInterfaceLayoutDirection == .rightToLeft ? visibleSize.width - size.width * scale : 0
+      entry.wrapper.layer.position = CGPoint(x: entry.scaling == .fit ? x : 0, y: 0)
+      entry.wrapper.transform = CGAffineTransform(scaleX: scale, y: scale)
       entry.chromeHost.frame = CGRect(origin: .zero, size: visibleSize)
       entry.chrome?.frame = entry.chromeHost.bounds
       entry.view.frame = entry.wrapper.bounds
-      (entry.view as? OverlayContentSafeArea)?.overlaySafeAreaInsetsDidChange(safeAreaInsets)
+      // Stable layout includes its insets. Passing the shrinking viewport's
+      // clearance to an outgoing scroll view can clamp its retained offset.
+      let contentInsets = entry.layout == .viewport ? safeAreaInsets : entry.allocationInsets
+      (entry.view as? OverlayContentSafeArea)?.overlaySafeAreaInsetsDidChange(contentInsets)
       entry.view.layoutIfNeeded()
       entry.chrome?.layoutIfNeeded()
-      // Disjoint reveal windows avoid old media bleeding through menu labels.
-      // Controls arrive last and leave first, always at their real point size.
       let weight = min(1, max(0, entry.visibility.value))
-      entry.wrapper.alpha = overlayBlend(weight, from: 0.55, to: 0.95)
-      entry.chromeHost.alpha = overlayBlend(weight, from: 0.78, to: 1)
+      switch style {
+      case .sequentialFade:
+        entry.wrapper.alpha = overlayBlend(weight, from: 0.55, to: 0.95)
+        entry.chromeHost.alpha = overlayBlend(weight, from: 0.78, to: 1)
+      case .crossfade, .blurredCrossfade:
+        entry.wrapper.alpha = overlayBlend(weight, from: 0.15, to: 0.85)
+        entry.chromeHost.alpha = overlayBlend(weight, from: 0.25, to: 0.9)
+      }
+      let usesBlur = style == .blurredCrossfade && transitioning && !reducingMotion
+        && !UIAccessibility.isReduceTransparencyEnabled && weight > 0 && weight < 1
+      entry.setBlur(usesBlur ? 1 - overlayBlend(weight, from: 0, to: 0.9) : 0)
     }
     if transitioning && !unsettled {
       transitioning = false
@@ -223,8 +301,9 @@ public enum OverlayPageContentLayout: Sendable { case stable, viewport }
 
   var overlayExtendsToEdges: Bool { (current?.view as? OverlayContentSafeArea)?.overlayExtendsToEdges == true }
   func overlaySafeAreaInsetsDidChange(_ insets: UIEdgeInsets) {
-    // Destination insets are used for measurement only. Content receives the
-    // actual visible clearance from overlayTransition on each rendered frame.
+    // Retain the destination environment alongside each stable allocation.
+    // Viewport pages instead receive the current clearance on every frame.
+    current?.allocationInsets = insets
   }
 
   func configure(layout: OverlayLayout, invalidate: @escaping () -> Void) {

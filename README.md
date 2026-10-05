@@ -54,10 +54,10 @@ In Xcode, choose **File → Add Package Dependencies** and enter:
 https://github.com/rien7/anchored-overlay-kit.git
 ```
 
-Select version **0.1.4** or later and add the **AnchoredOverlayKit** product to your app target. For a package manifest:
+Select version **0.2.0** or later and add the **AnchoredOverlayKit** product to your app target. For a package manifest:
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.1.4")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.2.0")
 ```
 
 Add `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")` to the consuming target’s dependencies.
@@ -78,7 +78,7 @@ package_json = Pod::Executable.execute_command('node', [
 pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-If a native module imports the library, declare `s.dependency 'AnchoredOverlayKit', '~> 0.1.0'` in that module’s podspec too. Run `pod install` and rebuild the native app. Use either CocoaPods or SPM per target.
+If a native module imports the library, declare `s.dependency 'AnchoredOverlayKit', '~> 0.2.0'` in that module’s podspec too. Run `pod install` and rebuild the native app. Use either CocoaPods or SPM per target.
 
 For Expo, persist the extra pod in app configuration before prebuild; see the [Expo integration recipe](INTEGRATION.md#expo-prebuild). Expo Go cannot load this native library.
 

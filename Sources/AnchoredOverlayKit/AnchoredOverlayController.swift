@@ -401,6 +401,8 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
                       width: max(0, motion[2].value), height: max(0, motion[3].value))
     // No Core Animation geometry interpolation: visible and hit-test bounds are
     // identical at every tick, including interruptions and shrinking panels.
+    let presence = min(1, max(0, motion[5].value))
+    var clearance: CGFloat = 0
     UIView.performWithoutAnimation {
       view.panel.frame = rect
       var radii = OverlayRadii(top: motion[4].value, bottomLeft: motion[7].value, bottomRight: motion[7].value)
@@ -411,21 +413,22 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
         radii.bottomRight += (right - radii.bottomRight) * weight
       }
       view.panel.setRadii(radii.clamped(to: rect.size))
-      let presence = min(1, max(0, motion[5].value))
       view.panel.alpha = overlayBlend(presence, from: 0, to: 0.18)
       view.panel.layoutIfNeeded()
-      var clearance: CGFloat = 0
       if let source {
         clearance = min(rect.height, max(0, rect.maxY - (source.bounds.maxY - source.safeAreaInsets.bottom)))
       }
-      view.panel.renderContent(presence: presence, elapsed: elapsed,
-                               safeAreaInsets: UIEdgeInsets(top: 0, left: 0, bottom: clearance, right: 0),
-                               backgroundProgress: motion[8].value,
-                               reducingMotion: UIAccessibility.isReduceMotionEnabled)
+
       if let anchorAlpha {
         anchor?.alpha = anchorAlpha * (1 - overlayBlend(presence, from: 0, to: 0.25))
       }
     }
+    // Geometry writes must be synchronous, but effect adapters need UIKit's
+    // animation environment to interpolate their externally driven progress.
+    view.panel.renderContent(presence: presence, elapsed: elapsed,
+                             safeAreaInsets: UIEdgeInsets(top: 0, left: 0, bottom: clearance, right: 0),
+                             backgroundProgress: motion[8].value,
+                             reducingMotion: UIAccessibility.isReduceMotionEnabled)
   }
 
   @objc private func background() {

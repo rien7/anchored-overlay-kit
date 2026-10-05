@@ -2,7 +2,7 @@
 
 [English](API.md) · [简体中文](API.zh-CN.md) · [返回 README](../README.zh-CN.md)
 
-对应 **0.1.4** 的公开 API，尺寸单位均为 pt。`Required` 表示必须传入、没有默认参数。展示与 UIKit 操作应在主 actor 上执行。下面的 Swift 签名用于说明接口，不是可直接拼接运行的示例。
+对应 **0.2.0** 的公开 API，尺寸单位均为 pt。`Required` 表示必须传入、没有默认参数。展示与 UIKit 操作应在主 actor 上执行。下面的 Swift 签名用于说明接口，不是可直接拼接运行的示例。
 
 ## Controller
 
@@ -154,13 +154,17 @@ OverlayAppearance(cornerRadius: CGFloat = 24, background: Background = .glass(.r
 ## 保留状态的页面
 
 ```swift
-OverlayPages(controller: AnchoredOverlayController)
+OverlayPages(controller: AnchoredOverlayController,
+             transitionStyle: OverlayPageTransitionStyle = .sequentialFade)
 OverlayPage(id: String, layout: OverlayLayout,
             appearance: OverlayAppearance = .standard,
             contentLayout: OverlayPageContentLayout = .stable,
+            contentScaling: OverlayContentScaling = .none,
             content: @escaping () -> UIView)
 OverlayPage.swiftUI(id: String, layout: OverlayLayout,
                     appearance: OverlayAppearance = .standard,
+                    contentLayout: OverlayPageContentLayout = .stable,
+                    contentScaling: OverlayContentScaling = .none,
                     @ViewBuilder content: @escaping () -> Content)
 
 @discardableResult
@@ -177,7 +181,7 @@ func back(transition: OverlayTransition = .spring)
 | `id` | Required | 稳定的逻辑页面 ID，只读；关闭前相同 ID 复用已缓存视图。 |
 | `layout` | Required | 页面布局，OverlayPage 中可修改。 |
 | `appearance` | .standard | 页面容器外观，可修改。 |
-| `contentLayout` | .stable | `.stable` 按目标尺寸布局；`.viewport` 跟随动画中的尺寸。可修改；swiftUI 工厂初始为 .stable。 |
+| `contentLayout` | .stable | `.stable` 按目标尺寸布局；`.viewport` 跟随动画中的尺寸。可修改；两个构造入口均支持该参数。 |
 | `content / makeContent` | Required | 每个保留 ID 只构造一次。存储为可修改的 makeContent；业务状态由应用持有。 |
 | `anchoredTo / dismissLabel` | Required | 与 controller.present 含义一致。 |
 | `allowsKeyboardOverlap` | true | 展示时的键盘覆盖策略。 |
@@ -292,3 +296,33 @@ OverlayActionBar(leading: UIView, trailing: UIView, center: UIView? = nil,
 | `OverlayPageActivity` | Optional protocol | `overlayPageActivityDidChange(isActive: Bool)` 在页面激活或停用时启动、停止应用资源。 |
 
 默认内容获得扣除安全距离后的区域。采用 `OverlayContentSafeArea` 后，图像可铺满容器，控件遵守传入的额外安全距离（目前主要是底部 Home Indicator）。overlayExtendsToEdges 返回 false 可退回普通模式。几何变化时可能持续回调，不要递归修改弹层布局。OverlayPages 会给过渡中仍可见的视图传递当前安全距离；资源是否活动则独立由 OverlayPageActivity 控制。即使视图仍被缓存，停用时也应停止相机、播放和订阅。
+
+## 可组合内容动效（0.2）
+
+`OverlayPage` 及 `OverlayPage.swiftUI` 均支持 `contentLayout`（默认 `.stable`）
+和 `contentScaling`（默认 `.none`）。布局与视觉缩放独立：`.stable` 保留目标尺寸，
+`.viewport` 跟随当前可见尺寸；`.fit` 按比例映射到可见区域，保持顶部起始侧对齐并适配 RTL。
+只变换库的包装层，不覆盖调用方 transform，不缩放 `OverlayPageChrome`。
+同一 page ID 保留初次创建的内容与策略。减少动态效果时禁用缩放。
+
+`OverlayPages(controller:transitionStyle:)` 默认 `.sequentialFade`，保持旧行为。
+可显式选择 `.crossfade` 或 `.blurredCrossfade`。仅页面切换使用这些效果；首次打开与最终
+关闭不自动添加模糊。所有效果共用几何时钟，反向切换保留当前值，静止或取消时释放模糊资源。
+`.immediate` 同步完成效果；减少动态效果或降低透明度时禁用模糊。
+
+`OverlayActionButton.appearance` 默认 `.automatic`。`OverlayActionAppearance` 支持
+`material`（`.automatic`、`.clearGlass`、`.regularGlass`）、`backingColor`、
+`foregroundColor`、`fallbackBackgroundColor`。真实底色与玻璃染色独立，可使用动态 UIColor。
+显式外观作用于任何强调级别；恢复 `.automatic` 后重新使用 actionStyle/accentColor 默认外观。
+旧系统使用填充降级，降低透明度时降级背景不透明；保留系统按钮状态及最小点击范围。
+
+```swift
+let pages = OverlayPages(controller: controller, transitionStyle: .blurredCrossfade)
+button.appearance = .clearGlass(backingColor: .black.withAlphaComponent(0.6))
+```
+
+升级时旧调用保持兼容；本地 `.scaled` patch 应改用 `.stable` + `contentScaling: .fit`。
+应用显式选择转场与底色。库不包含业务触觉策略、照片或相机实现。
+
+稳定布局同时保留目标安全区 inset，避免离场时临时缩小底部 inset 导致滚动位置被夹断。
+`.viewport` 继续接收实时安全区；chrome 的 frame 跟随可见区域，稳定页的控件预留最终安全区。
