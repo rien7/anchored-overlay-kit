@@ -12,7 +12,7 @@
 - 沿弹层实时圆角补齐贴边项目的选中描边。
 - 将内容动画收进目标视图，并协调从系统界面返回后的恢复。
 
-**环境要求：iOS 16+、Swift 6.2、Xcode 26+。** 无第三方运行时依赖。以下示例使用 **0.3.0** API。
+**环境要求：iOS 16+、Swift 6.2、Xcode 26+。** 无第三方运行时依赖。以下示例使用 **0.3.1** API。
 
 [演示](#演示) · [安装](#安装) · [快速入门](#快速入门) · [页面组合](#页面组合) · [贴边选中描边](#贴边选中描边) · [API 文档](docs/API.zh-CN.md)
 
@@ -20,9 +20,9 @@
 
 打开菜单 → 展开照片 → 选择两张 → 添加到草稿 → 继续输入。
 
-![输入框与照片面板连续演示](https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-preview-0.3.0-1f5e9aa0567a.gif)
+![输入框与照片面板连续演示](https://github.com/rien7/anchored-overlay-kit/releases/download/0.3.1/overlay-showcase-preview-0.3.1-1f5e9aa0567a.gif)
 
-[观看或下载完整视频](https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-0.3.0-e214b87b516b.mp4)。在 iOS 26.4 模拟器上连续录制，以 1 倍速播放。示例使用内置照片，可离线运行；贴边选中框使用 `OverlayBoundaryHighlighting`。
+[观看或下载完整视频](https://github.com/rien7/anchored-overlay-kit/releases/download/0.3.1/overlay-showcase-0.3.1-e214b87b516b.mp4)。在 iOS 26.4 模拟器上连续录制，以 1 倍速播放。示例使用内置照片，可离线运行；贴边选中框使用 `OverlayBoundaryHighlighting`。
 
 打开 [Examples/OverlayDemo.xcodeproj](Examples/OverlayDemo.xcodeproj)，选择 **Showcase** 即可体验。可运行代码见 [ShowcaseController.swift](Examples/OverlayDemo/ShowcaseController.swift) 和 [RecentPhotosDemo.swift](Examples/OverlayDemo/RecentPhotosDemo.swift)。
 
@@ -35,7 +35,7 @@
 
 ### Swift Package Manager
 
-在 Xcode 中选择 **File → Add Package Dependencies**，输入仓库地址，选择 **0.3.0** 或更新版本：
+在 Xcode 中选择 **File → Add Package Dependencies**，输入仓库地址，选择 **0.3.1** 或更新版本：
 
 ```text
 https://github.com/rien7/anchored-overlay-kit.git
@@ -44,7 +44,7 @@ https://github.com/rien7/anchored-overlay-kit.git
 使用 Package.swift 时添加：
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.3.0")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.3.1")
 ```
 
 在 target 的 dependencies 中加入 `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")`。
@@ -65,7 +65,7 @@ package_json = Pod::Executable.execute_command('node', [
 pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-使用方原生模块还需在 podspec 中声明 `s.dependency 'AnchoredOverlayKit', '~> 0.3.0'`。运行 `pod install` 后重新构建原生应用。同一 target 选择一种安装方式。
+使用方原生模块还需在 podspec 中声明 `s.dependency 'AnchoredOverlayKit', '~> 0.3.1'`。运行 `pod install` 后重新构建原生应用。同一 target 选择一种安装方式。
 
 npm 包提供 **Swift 原生源码**，不包含 JavaScript 组件或自动 React Native 桥接。Expo 项目应在 prebuild 前将 pod 写入持久化应用配置，参考 [Expo 接入示例](INTEGRATION.md#expo-prebuild)。需要原生构建或 development build；Expo Go 无法加载本库。
 

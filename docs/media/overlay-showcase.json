@@ -37,8 +37,8 @@
     "duration": "12.483333",
     "bytes": 787665,
     "sha256": "e214b87b516b311572ef1dc10ac5e7a849c047264d0e7859a85855964e60ddb6",
-    "releaseAssetFilename": "overlay-showcase-0.3.0-e214b87b516b.mp4",
-    "url": "https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-0.3.0-e214b87b516b.mp4"
+    "releaseAssetFilename": "overlay-showcase-0.3.1-e214b87b516b.mp4",
+    "url": "https://github.com/rien7/anchored-overlay-kit/releases/download/0.3.1/overlay-showcase-0.3.1-e214b87b516b.mp4"
   },
   "preview": {
     "filename": "overlay-showcase-preview.gif",
@@ -49,11 +49,11 @@
     "duration": "12.480000",
     "bytes": 1596209,
     "sha256": "1f5e9aa0567a4288977c077ef6322d349febea1d2d52707fb16c98bac99ea3b7",
-    "releaseAssetFilename": "overlay-showcase-preview-0.3.0-1f5e9aa0567a.gif",
-    "url": "https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-preview-0.3.0-1f5e9aa0567a.gif"
+    "releaseAssetFilename": "overlay-showcase-preview-0.3.1-1f5e9aa0567a.gif",
+    "url": "https://github.com/rien7/anchored-overlay-kit/releases/download/0.3.1/overlay-showcase-preview-0.3.1-1f5e9aa0567a.gif"
   },
   "sourceDurationSeconds": 12.483333,
-  "assetHostingReleaseTag": "0.2.0",
+  "assetHostingReleaseTag": "0.3.1",
   "photoExpansionReview": {
     "intervalSeconds": [
       2.8,
@@ -64,5 +64,6 @@
     "selectedPhotoBorder": "3pt accent border with OverlayBoundaryHighlighting",
     "curvedBoundaryPixels": 521,
     "outerCornerClear": true
-  }
+  },
+  "capturedSourcesCommittedAs": "5976a054e37a9d44785457c829c559ffddad953a"
 }

@@ -2,7 +2,7 @@
 
 [English](API.md) · [简体中文](API.zh-CN.md) · [README](../README.md)
 
-Public API for **0.3.0**. Sizes are in points. `Required` means there is no default argument. Run presentation and UIKit operations on the main actor. Swift signatures below describe the API; they are not a single executable example.
+Public API for **0.3.1**. Sizes are in points. `Required` means there is no default argument. Run presentation and UIKit operations on the main actor. Swift signatures below describe the API; they are not a single executable example.
 
 ## Controller
 

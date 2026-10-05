@@ -1,6 +1,6 @@
 {
   "name": "@rien7/anchored-overlay-kit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Native iOS anchored overlays with keyboard-aware placement and retained content transitions.",
   "license": "MIT",
   "author": "rien7",

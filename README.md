@@ -12,7 +12,7 @@ The library handles presentation, layout, material, clipping and transitions. Yo
 - Complete item selection borders along the panel’s live rounded boundary.
 - Animate content into a destination view and coordinate returns from system UI.
 
-**Requires iOS 16+, Swift 6.2 and Xcode 26+.** No third-party runtime dependencies. The examples below use the **0.3.0** API.
+**Requires iOS 16+, Swift 6.2 and Xcode 26+.** No third-party runtime dependencies. The examples below use the **0.3.1** API.
 
 [Demo](#demo) · [Install](#installation) · [Quick start](#quick-start) · [Pages](#compose-pages) · [Boundary highlights](#selection-at-rounded-edges) · [API reference](docs/API.md)
 
@@ -20,9 +20,9 @@ The library handles presentation, layout, material, clipping and transitions. Yo
 
 Open the menu → expand photos → select two → add to the draft → keep typing.
 
-![Continuous composer and photo demo](https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-preview-0.3.0-1f5e9aa0567a.gif)
+![Continuous composer and photo demo](https://github.com/rien7/anchored-overlay-kit/releases/download/0.3.1/overlay-showcase-preview-0.3.1-1f5e9aa0567a.gif)
 
-[Watch or download the full video](https://github.com/rien7/anchored-overlay-kit/releases/download/0.2.0/overlay-showcase-0.3.0-e214b87b516b.mp4). One continuous recording at 1× speed on the iOS 26.4 Simulator. The example runs offline with bundled photos; its rounded selection borders use `OverlayBoundaryHighlighting`.
+[Watch or download the full video](https://github.com/rien7/anchored-overlay-kit/releases/download/0.3.1/overlay-showcase-0.3.1-e214b87b516b.mp4). One continuous recording at 1× speed on the iOS 26.4 Simulator. The example runs offline with bundled photos; its rounded selection borders use `OverlayBoundaryHighlighting`.
 
 Open [Examples/OverlayDemo.xcodeproj](Examples/OverlayDemo.xcodeproj) and select **Showcase** to try this flow. The runnable code is in [ShowcaseController.swift](Examples/OverlayDemo/ShowcaseController.swift) and [RecentPhotosDemo.swift](Examples/OverlayDemo/RecentPhotosDemo.swift).
 
@@ -35,7 +35,7 @@ Open [Examples/OverlayDemo.xcodeproj](Examples/OverlayDemo.xcodeproj) and select
 
 ### Swift Package Manager
 
-In Xcode, choose **File → Add Package Dependencies**, enter the repository URL and select **0.3.0** or later:
+In Xcode, choose **File → Add Package Dependencies**, enter the repository URL and select **0.3.1** or later:
 
 ```text
 https://github.com/rien7/anchored-overlay-kit.git
@@ -44,7 +44,7 @@ https://github.com/rien7/anchored-overlay-kit.git
 For a package manifest:
 
 ```swift
-.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.3.0")
+.package(url: "https://github.com/rien7/anchored-overlay-kit.git", from: "0.3.1")
 ```
 
 Add `.product(name: "AnchoredOverlayKit", package: "anchored-overlay-kit")` to your target’s dependencies.
@@ -65,7 +65,7 @@ package_json = Pod::Executable.execute_command('node', [
 pod 'AnchoredOverlayKit', :path => File.dirname(package_json)
 ```
 
-A consuming native module also needs `s.dependency 'AnchoredOverlayKit', '~> 0.3.0'` in its podspec. Run `pod install` and rebuild the native application. Choose one installation method per target.
+A consuming native module also needs `s.dependency 'AnchoredOverlayKit', '~> 0.3.1'` in its podspec. Run `pod install` and rebuild the native application. Choose one installation method per target.
 
 The npm package supplies **native Swift source**. It does not include a JavaScript component or automatic React Native bridge. For Expo, persist the pod in app configuration before prebuild; follow the [Expo integration recipe](INTEGRATION.md#expo-prebuild). Use a native/development build; Expo Go cannot load the library.
 

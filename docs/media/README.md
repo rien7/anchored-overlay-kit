@@ -8,6 +8,13 @@ network access or Photos permission.
 独立 **Showcase** 页面使用库的公开 API 和内置照片。展示前完成图片解码，网格只创建可见格子，选择后
 将真实缩略图添加到草稿，并将第一张照片动画收进目标位置。贴边选中框使用 0.3.0 的 `OverlayBoundaryHighlighting`。无需账号、网络或照片权限。
 
+The accepted capture was made on the 0.3.0 base with local changes subsequently
+committed as `5976a05`; its library and example sources ship in 0.3.1. The recording
+metadata preserves that capture provenance. The MP4 and GIF are unchanged.
+
+已选定的录屏基于 0.3.0 和当时的本地修改，随后提交为 `5976a05`；对应库与示例源码
+随 0.3.1 发布。录制元数据保留原始来源，MP4 和 GIF 内容未变。
+
 ## Capture / 录制
 
 With Xcode, the iOS 26.4 runtime, Python 3, AXe 1.8+ and ffmpeg installed, run:

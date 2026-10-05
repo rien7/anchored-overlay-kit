@@ -2,7 +2,7 @@
 
 [English](API.md) · [简体中文](API.zh-CN.md) · [返回 README](../README.zh-CN.md)
 
-对应 **0.3.0** 的公开 API，尺寸单位均为 pt。`Required` 表示必须传入、没有默认参数。展示与 UIKit 操作应在主 actor 上执行。下面的 Swift 签名用于说明接口，不是可直接拼接运行的示例。
+对应 **0.3.1** 的公开 API，尺寸单位均为 pt。`Required` 表示必须传入、没有默认参数。展示与 UIKit 操作应在主 actor 上执行。下面的 Swift 签名用于说明接口，不是可直接拼接运行的示例。
 
 ## Controller
 
