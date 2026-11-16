@@ -115,6 +115,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     closing = false
     let view = OverlaySurface(content: content, appearance: appearance, dismissLabel: dismissLabel) { [weak self] in self?.dismiss() }
     view.allowsKeyboardOverlap = allowsKeyboardOverlap
+    if let dim = appearance.dim { view.dim.backgroundColor = dim }
     surface = view
     // Content can move into the keyboard window without losing its controller
     // responder chain. UIKit menus need an owning controller to present. Do not
@@ -164,6 +165,8 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
       if motion.count == Self.components { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
+    // Keep the last color so a removed scrim fades out instead of vanishing.
+    if let dim = appearance.dim { surface?.dim.backgroundColor = dim }
     self.appearance = appearance
     measurementDirty = true
     requestRefresh(transition: transition)
@@ -195,6 +198,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
       if motion.count == Self.components { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
+    if let dim = appearance.dim { surface?.dim.backgroundColor = dim }
     self.appearance = appearance
     requestRefresh(transition: transition)
   }
@@ -356,12 +360,12 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
   }
 
   // x, y, width, height, top radius, presence, bottom concentric weight,
-  // bottom radius, background progress, top concentric weight.
-  private static let components = 10
+  // bottom radius, background progress, top concentric weight, dim progress.
+  private static let components = 11
 
   private func values(_ rect: CGRect, radius: CGFloat, alpha: CGFloat, concentric: CGFloat = 0,
-                      bottomRadius: CGFloat? = nil, topConcentric: CGFloat = 0) -> [CGFloat] {
-    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius, 1, topConcentric]
+                      bottomRadius: CGFloat? = nil, topConcentric: CGFloat = 0, dim: CGFloat = 0) -> [CGFloat] {
+    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius, 1, topConcentric, dim]
   }
 
   private func settleGeometry(includingContent: Bool = true) {
@@ -434,6 +438,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
       }
       view.panel.setRadii(radii.clamped(to: rect.size))
       view.panel.alpha = overlayBlend(presence, from: 0, to: 0.18)
+      view.dim.alpha = min(1, max(0, motion[10].value)) * presence
       view.panel.layoutIfNeeded()
       if let source {
         clearance = min(rect.height, max(0, rect.maxY - (source.bounds.maxY - source.safeAreaInsets.bottom)))
@@ -667,7 +672,8 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
       }
     }
     target = values(rect, radius: max(0, finite(topRadius)), alpha: 1,
-                    concentric: concentric, bottomRadius: max(0, finite(bottomRadius)), topConcentric: topConcentric)
+                    concentric: concentric, bottomRadius: max(0, finite(bottomRadius)), topConcentric: topConcentric,
+                    dim: appearance.dim == nil ? 0 : 1)
     if resolvedFrame != rect {
       resolvedFrame = rect
       layoutRevision += 1
@@ -694,6 +700,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
   let panel: OverlayPanel
   var menuFrame: CGRect = .zero
   var allowsKeyboardOverlap = true
+  let dim = UIView()
   private let backdrop = UIControl()
   private let close: () -> Void
 
@@ -709,12 +716,16 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     backdrop.isAccessibilityElement = true
     backdrop.accessibilityTraits = .button
     backdrop.addAction(UIAction { _ in close() }, for: .touchUpInside)
+    dim.isUserInteractionEnabled = false
+    dim.accessibilityElementsHidden = true
+    dim.alpha = 0
+    addSubview(dim)
     addSubview(backdrop)
     addSubview(panel)
     accessibilityElements = [content, backdrop]
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  override func layoutSubviews() { super.layoutSubviews(); backdrop.frame = bounds }
+  override func layoutSubviews() { super.layoutSubviews(); dim.frame = bounds; backdrop.frame = bounds }
   override func accessibilityPerformEscape() -> Bool { close(); return true }
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     guard bounds.contains(point), !isHidden, alpha > 0.01, isUserInteractionEnabled else { return nil }

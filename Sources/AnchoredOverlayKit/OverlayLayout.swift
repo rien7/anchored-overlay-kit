@@ -83,6 +83,9 @@ public struct OverlaySpringParameters: Equatable, Sendable {
   public enum GlassStyle: Sendable { case regular, clear }
   public var corners: Corners
   public var background: Background
+  /// Full-window scrim behind the panel (e.g. a dynamic color for light/dark).
+  /// Fades in with the geometry spring while set and out on change to nil or close.
+  public var dim: UIColor?
   public enum Background {
     case material(UIBlurEffect.Style)
     case glass(GlassStyle, tint: UIColor? = nil, fallback: UIBlurEffect.Style = .systemMaterial)
@@ -98,8 +101,8 @@ public struct OverlaySpringParameters: Equatable, Sendable {
       }
     }
   }
-  public init(corners: Corners, background: Background = .glass(.regular)) {
-    self.corners = corners; self.background = background
+  public init(corners: Corners, background: Background = .glass(.regular), dim: UIColor? = nil) {
+    self.corners = corners; self.background = background; self.dim = dim
   }
   /// Compatibility spelling for a uniform, fixed radius.
   public init(cornerRadius: CGFloat = 24, background: Background = .glass(.regular)) {
