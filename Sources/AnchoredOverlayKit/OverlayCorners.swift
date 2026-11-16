@@ -22,14 +22,16 @@ import UIKit
     }
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  func bottomRadii(in window: UIWindow, frame: CGRect) -> (CGFloat, CGFloat) {
+  func radii(in window: UIWindow, frame: CGRect) -> OverlayRadii {
     if superview !== window { removeFromSuperview(); window.insertSubview(self, at: 0) }
     self.frame = frame
     if #available(iOS 26.0, *) {
       layoutIfNeeded()
-      return (effectiveRadius(corner: .bottomLeft), effectiveRadius(corner: .bottomRight))
+      return OverlayRadii(top: effectiveRadius(corner: .topLeft),
+                          bottomLeft: effectiveRadius(corner: .bottomLeft),
+                          bottomRight: effectiveRadius(corner: .bottomRight))
     }
-    return (0, 0)
+    return OverlayRadii(top: 0, bottomLeft: 0, bottomRight: 0)
   }
 }
 

@@ -116,6 +116,7 @@ Returns `false` if it cannot start (no valid presentation, closing, another inte
 OverlayLayout(width: Width, height: Height, position: Position = .anchored)
 OverlayLayout.bottomEdge(inset: CGFloat = 12, height: Height, maxWidth: CGFloat = 600)
 OverlayLayout.expandingToBottom(inset: CGFloat = 12, maxWidth: CGFloat = 600)
+OverlayLayout.fullScreen(inset: CGFloat = 12, maxWidth: CGFloat = .greatestFiniteMagnitude)
 ```
 
 | Parameter / member | Default | Meaning |
@@ -126,12 +127,16 @@ OverlayLayout.expandingToBottom(inset: CGFloat = 12, maxWidth: CGFloat = 600)
 | `Height.content(max:)` | Required cap | Fit content at the resolved width, cap the total outer height. |
 | `Height.viewportFraction(CGFloat)` | Required fraction | Fraction of source-window height, clamped to available space. |
 | `Position.anchored` | Default | Follow the trigger. |
+| `Position.anchoredLeading(offset:)` | Required value | Centered vertically on the trigger; leading edge at the trigger's leading edge plus offset (negative moves outward). Only clamped to the window. |
 | `Position.bottom(inset:)` | 16 | Clearance above the resolved safe/keyboard bottom boundary. |
 | `Position.bottomEdge(inset:)` | 12 | Position against the window bottom edge. |
 | `Position.expandingToBottom(inset:)` | 12 | Capture the previous destination top, fill to the window bottom; ignores height. Initial presentation uses the safe top. |
+| `Position.fullScreen(inset:)` | 12 | Fill the window with equal spacing on all four sides, independent of safe area; ignores height. Content receives top and bottom clearance. |
 | `bottomEdge(inset:height:maxWidth:)` | 12 / Required / 600 | Convenience combining available width and equal window-edge spacing. |
 | `expandingToBottom(inset:maxWidth:)` | 12 / 600 | Convenience combining available width and expanding position. |
+| `fullScreen(inset:maxWidth:)` | 12 / unbounded | Convenience combining available width and the full-screen position. |
 | `OverlayTransition` | .spring in updates | `.spring` or `.immediate`. |
+| `controller.spring` | .smooth | Geometry spring `OverlaySpringParameters(response:dampingFraction:)`. `.smooth` is critically damped (the 0.3 behavior); `.snappy` is 0.23 s / 0.8 with a slight overshoot. |
 
 All three layout fields are mutable. Width is resolved before content height. Implement `OverlayContentSizing` or Auto Layout fitting; never derive desired height from the last allocated frame. Scroll views need bounded heights or a wrapper with a meaningful natural height. Insets for edge layouts can extend the background under the Home Indicator; the library reduces normal content bounds by remaining clearance. Do not add it twice.
 
@@ -144,6 +149,7 @@ OverlayAppearance(cornerRadius: CGFloat = 24, background: Background = .glass(.r
 | --- | --- | --- |
 | `Corners.fixed(CGFloat)` | 24 via cornerRadius init | Uniform corner radius. |
 | `Corners.bottomConcentric(top:fallback:)` | 24 / 24 | Fixed top; system-derived bottom radii when eligible on iOS 26+, otherwise fallback bottom radius. |
+| `Corners.concentric(fallback:)` | 24 | Like bottomConcentric; with `.fullScreen` the top corners follow the display too. |
 | `Background.glass(_:tint:fallback:)` | Required style / nil / .systemMaterial | Style is `.regular` or `.clear`. Native UIGlassEffect on iOS 26+, fallback UIBlurEffect.Style earlier. |
 | `Background.material(UIBlurEffect.Style)` | Required style | System blur material. |
 | `Background.color(UIColor)` | Required color | Solid/custom UIColor background. |

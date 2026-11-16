@@ -13,12 +13,19 @@ public struct OverlayLayout: Equatable, Sendable {
     case viewportFraction(CGFloat)
   }
   public enum Position: Equatable, Sendable {
+    /// Leading edge at the anchor's leading edge, vertically centered on the anchor.
     case anchored
+    /// Vertically centered on the anchor; the leading edge sits `offset` points from
+    /// the anchor's leading edge (negative moves it outward, e.g. to a field's edge).
+    case anchoredLeading(offset: CGFloat)
     case bottom(inset: CGFloat = 16)
     /// Background reaches the window edge; content receives bottom clearance.
     case bottomEdge(inset: CGFloat = 12)
     /// Capture the current panel top on entry, then extend to the window bottom.
     case expandingToBottom(inset: CGFloat = 12)
+    /// The whole window inset equally on every side, independent of safe area.
+    /// Content receives top and bottom clearance; height is ignored.
+    case fullScreen(inset: CGFloat = 12)
   }
   public var width: Width
   public var height: Height
@@ -32,6 +39,12 @@ public struct OverlayLayout: Equatable, Sendable {
     Self(width: .available(inset: inset, max: maxWidth), height: .viewportFraction(1),
          position: .expandingToBottom(inset: inset))
   }
+  /// Fills the window with equal spacing on all four sides. Pair with
+  /// `.concentric` corners so every corner follows the display.
+  public static func fullScreen(inset: CGFloat = 12, maxWidth: CGFloat = .greatestFiniteMagnitude) -> Self {
+    Self(width: .available(inset: inset, max: maxWidth), height: .viewportFraction(1),
+         position: .fullScreen(inset: inset))
+  }
   /// Equal horizontal and bottom window-edge spacing, independent of safe area.
   public static func bottomEdge(inset: CGFloat = 12, height: Height, maxWidth: CGFloat = 600) -> Self {
     Self(width: .available(inset: inset, max: maxWidth), height: height, position: .bottomEdge(inset: inset))
@@ -39,6 +52,21 @@ public struct OverlayLayout: Equatable, Sendable {
 }
 
 public enum OverlayTransition: Sendable { case immediate, spring }
+
+/// Geometry spring. `response` is the undamped period in seconds; a
+/// `dampingFraction` below 1 overshoots. Applies to every geometry component.
+public struct OverlaySpringParameters: Equatable, Sendable {
+  public var response: CGFloat
+  public var dampingFraction: CGFloat
+  public init(response: CGFloat, dampingFraction: CGFloat) {
+    self.response = response; self.dampingFraction = dampingFraction
+  }
+  /// Critically damped, no overshoot (the behavior before 0.4.0).
+  public static let smooth = Self(response: 2 * .pi / 22, dampingFraction: 1)
+  /// Quicker, with a slight overshoot, like system context menus.
+  public static let snappy = Self(response: 0.23, dampingFraction: 0.8)
+  var omega: CGFloat { 2 * .pi / max(0.01, response) }
+}
 
 /// The container owns clipping and radius animation. Use `.custom` to put a
 /// caller-owned background behind content while retaining these guarantees.
@@ -48,6 +76,9 @@ public enum OverlayTransition: Sendable { case immediate, spring }
     /// Bottom corners follow the source window on iOS 26+. Top corners remain
     /// fixed. Above-keyboard, width-capped and older-system layouts use fallback.
     case bottomConcentric(top: CGFloat = 24, fallback: CGFloat = 24)
+    /// Every corner follows the source window on iOS 26+ (with `.fullScreen`).
+    /// Elsewhere, and on older systems, uses fallback.
+    case concentric(fallback: CGFloat = 24)
   }
   public enum GlassStyle: Sendable { case regular, clear }
   public var corners: Corners
@@ -79,6 +110,7 @@ public enum OverlayTransition: Sendable { case immediate, spring }
       switch corners {
       case .fixed(let value): return value
       case .bottomConcentric(let top, _): return top
+      case .concentric(let fallback): return fallback
       }
     }
     set { corners = .fixed(newValue) }
@@ -95,18 +127,29 @@ public enum OverlayTransition: Sendable { case immediate, spring }
   func overlayHeight(forWidth width: CGFloat) -> CGFloat
 }
 
-// Exact critically damped integration; retargeting preserves position/velocity.
+// Exact damped-oscillator integration; retargeting preserves position/velocity.
 // One spring per component keeps interruption independent of frame rate.
 struct OverlaySpring {
   var value: CGFloat
   var velocity: CGFloat = 0
-  mutating func advance(to target: CGFloat, elapsed: CGFloat) {
-    let omega: CGFloat = 22
+  mutating func advance(to target: CGFloat, elapsed: CGFloat, parameters: OverlaySpringParameters = .smooth) {
+    let omega = parameters.omega
+    let zeta = min(1, max(0, parameters.dampingFraction))
     let offset = value - target
-    let coefficient = velocity + omega * offset
-    let decay = exp(-omega * elapsed)
-    value = target + (offset + coefficient * elapsed) * decay
-    velocity = (velocity - omega * coefficient * elapsed) * decay
+    if zeta >= 1 {
+      let coefficient = velocity + omega * offset
+      let decay = exp(-omega * elapsed)
+      value = target + (offset + coefficient * elapsed) * decay
+      velocity = (velocity - omega * coefficient * elapsed) * decay
+    } else {
+      let a = zeta * omega
+      let damped = omega * sqrt(1 - zeta * zeta)
+      let b = (velocity + a * offset) / damped
+      let decay = exp(-a * elapsed)
+      let c = cos(damped * elapsed), s = sin(damped * elapsed)
+      value = target + decay * (offset * c + b * s)
+      velocity = decay * ((b * damped - a * offset) * c - (a * b + offset * damped) * s)
+    }
     if abs(value - target) < 0.02 && abs(velocity) < 0.1 { value = target; velocity = 0 }
   }
 }
@@ -114,7 +157,7 @@ struct OverlaySpring {
 extension OverlayLayout.Position {
   var edgeInset: CGFloat? {
     switch self {
-    case .bottomEdge(let inset), .expandingToBottom(let inset): return inset
+    case .bottomEdge(let inset), .expandingToBottom(let inset), .fullScreen(let inset): return inset
     default: return nil
     }
   }
