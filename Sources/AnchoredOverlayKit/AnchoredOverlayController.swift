@@ -24,6 +24,8 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
   public var onPlacementChange: ((OverlayPlacementState) -> Void)?
   public var onDismiss: (() -> Void)?
   public var anchorTransition: OverlayAnchorTransition = .none
+  /// Geometry motion for presentation, page changes and dismissal.
+  public var spring: OverlaySpringParameters = .smooth
   private var anchorAlpha: CGFloat?
   /// Resolved destination in source-window coordinates, not the animated frame.
   public private(set) var resolvedFrame: CGRect?
@@ -113,6 +115,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     closing = false
     let view = OverlaySurface(content: content, appearance: appearance, dismissLabel: dismissLabel) { [weak self] in self?.dismiss() }
     view.allowsKeyboardOverlap = allowsKeyboardOverlap
+    if let dim = appearance.dim { view.dim.backgroundColor = dim }
     surface = view
     // Content can move into the keyboard window without losing its controller
     // responder chain. UIKit menus need an owning controller to present. Do not
@@ -160,8 +163,10 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     if let allowsKeyboardOverlap { surface?.allowsKeyboardOverlap = allowsKeyboardOverlap }
     if !self.appearance.background.matches(appearance.background) {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
-      if motion.count == 9 { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
+      if motion.count == Self.components { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
+    // Keep the last color so a removed scrim fades out instead of vanishing.
+    if let dim = appearance.dim { surface?.dim.backgroundColor = dim }
     self.appearance = appearance
     measurementDirty = true
     requestRefresh(transition: transition)
@@ -191,8 +196,9 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     guard surface != nil, !closing else { return }
     if !self.appearance.background.matches(appearance.background) {
       surface?.panel.setBackground(appearance.background, animated: transition == .spring)
-      if motion.count == 9 { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
+      if motion.count == Self.components { motion[8] = OverlaySpring(value: transition == .immediate ? 1 : 0) }
     }
+    if let dim = appearance.dim { surface?.dim.backgroundColor = dim }
     self.appearance = appearance
     requestRefresh(transition: transition)
   }
@@ -234,7 +240,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     view.isUserInteractionEnabled = false
     // Enter the standard close lifecycle first; only its geometry destination differs.
     dismissWithResult(animated: true, completion: completion)
-    guard closing, motion.count == 9 else { return }
+    guard closing, motion.count == Self.components else { return }
     closingDestination = destination
     closingCornerRadius = max(0, cornerRadius)
     followsClosingDestination = true
@@ -353,12 +359,17 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     for completion in completions { completion(settledResult) }
   }
 
-  private func values(_ rect: CGRect, radius: CGFloat, alpha: CGFloat, concentric: CGFloat = 0, bottomRadius: CGFloat? = nil) -> [CGFloat] {
-    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius, 1]
+  // x, y, width, height, top radius, presence, bottom concentric weight,
+  // bottom radius, background progress, top concentric weight, dim progress.
+  private static let components = 11
+
+  private func values(_ rect: CGRect, radius: CGFloat, alpha: CGFloat, concentric: CGFloat = 0,
+                      bottomRadius: CGFloat? = nil, topConcentric: CGFloat = 0, dim: CGFloat = 0) -> [CGFloat] {
+    [rect.minX, rect.minY, rect.width, rect.height, radius, alpha, concentric, bottomRadius ?? radius, 1, topConcentric, dim]
   }
 
   private func settleGeometry(includingContent: Bool = true) {
-    guard motion.count == 9, target.count == 9 else { return }
+    guard motion.count == Self.components, target.count == Self.components else { return }
     for index in motion.indices where index != 5 && (includingContent || index != 8) { motion[index] = OverlaySpring(value: target[index]) }
     applyMotion()
   }
@@ -384,7 +395,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
       // existing child to the same parent reorders it without unmounting it.
       destination.addSubview(view)
     }
-    guard surface != nil, motion.count == 9, target.count == 9 else { return }
+    guard surface != nil, motion.count == Self.components, target.count == Self.components else { return }
     if closing { updateClosingDestination() }
     let contentMoving = (surface?.content as? OverlayContentTransition)?.overlayTransitionActive == true
     if !contentMoving && zip(motion, target).allSatisfy({ $0.value == $1 && $0.velocity == 0 }) {
@@ -400,33 +411,40 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     let elapsed = lastTick == 0 ? 0 : min(0.1, link.timestamp - lastTick)
     lastTick = link.timestamp
     if UIAccessibility.isReduceMotionEnabled && !closing { settleGeometry(includingContent: false) }
-    for index in motion.indices { motion[index].advance(to: target[index], elapsed: elapsed) }
+    for index in motion.indices { motion[index].advance(to: target[index], elapsed: elapsed, parameters: spring) }
     applyMotion(elapsed: elapsed)
     if closing && zip(motion, target).allSatisfy({ $0.value == $1 }) { finishDismiss() }
   }
 
   private func applyMotion(elapsed: CGFloat = 0) {
-    guard let view = surface, motion.count == 9 else { return }
+    guard let view = surface, motion.count == Self.components else { return }
     let rect = CGRect(x: motion[0].value, y: motion[1].value,
                       width: max(0, motion[2].value), height: max(0, motion[3].value))
     // No Core Animation geometry interpolation: visible and hit-test bounds are
     // identical at every tick, including interruptions and shrinking panels.
     let presence = min(1, max(0, motion[5].value))
     var clearance: CGFloat = 0
+    var topClearance: CGFloat = 0
     UIView.performWithoutAnimation {
       view.panel.frame = rect
       var radii = OverlayRadii(top: motion[4].value, bottomLeft: motion[7].value, bottomRight: motion[7].value)
       let weight = min(1, max(0, motion[6].value))
-      if weight > 0, let source {
-        let (left, right) = cornerReference.bottomRadii(in: source, frame: rect)
-        radii.bottomLeft += (left - radii.bottomLeft) * weight
-        radii.bottomRight += (right - radii.bottomRight) * weight
+      let topWeight = min(1, max(0, motion[9].value))
+      if weight > 0 || topWeight > 0, let source {
+        let reference = cornerReference.radii(in: source, frame: rect)
+        radii.bottomLeft += (reference.bottomLeft - radii.bottomLeft) * weight
+        radii.bottomRight += (reference.bottomRight - radii.bottomRight) * weight
+        radii.top += (reference.top - radii.top) * topWeight
       }
       view.panel.setRadii(radii.clamped(to: rect.size))
       view.panel.alpha = overlayBlend(presence, from: 0, to: 0.18)
+      view.dim.alpha = min(1, max(0, motion[10].value)) * presence
       view.panel.layoutIfNeeded()
       if let source {
         clearance = min(rect.height, max(0, rect.maxY - (source.bounds.maxY - source.safeAreaInsets.bottom)))
+        if case .fullScreen = layout.position {
+          topClearance = min(rect.height, max(0, source.bounds.minY + source.safeAreaInsets.top - rect.minY))
+        }
       }
 
       if let anchorAlpha {
@@ -436,7 +454,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     // Geometry writes must be synchronous, but effect adapters need UIKit's
     // animation environment to interpolate their externally driven progress.
     view.panel.renderContent(presence: presence, elapsed: elapsed,
-                             safeAreaInsets: UIEdgeInsets(top: 0, left: 0, bottom: clearance, right: 0),
+                             safeAreaInsets: UIEdgeInsets(top: topClearance, left: 0, bottom: clearance, right: 0),
                              backgroundProgress: motion[8].value,
                              reducingMotion: UIAccessibility.isReduceMotionEnabled)
     view.panel.renderBoundaryHighlights()
@@ -546,7 +564,8 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     view.frame = frame
     view.overrideUserInterfaceStyle = anchor.traitCollection.userInterfaceStyle
     let origin = anchor.convert(anchor.bounds, to: source)
-    let top = source.bounds.minY + source.safeAreaInsets.top + 8
+    var top = source.bounds.minY + source.safeAreaInsets.top + 8
+    if case .fullScreen(let margin) = layout.position { top = source.bounds.minY + max(0, finite(margin)) }
     var bottom = source.bounds.maxY - max(16, source.safeAreaInsets.bottom)
     if let margin = layout.position.edgeInset {
       bottom = source.bounds.maxY - max(0, finite(margin))
@@ -596,6 +615,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     if case .expandingToBottom = layout.position {
       desiredHeight = bottom - max(top, expansionTop ?? top)
     }
+    if case .fullScreen = layout.position { desiredHeight = bottom - top }
     let height = max(0, min(finite(desiredHeight), bottom - top))
     let x: CGFloat
     let y: CGFloat
@@ -603,27 +623,45 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     case .anchored:
       x = min(max(source.bounds.minX + inset, origin.minX), source.bounds.maxX - width - inset)
       y = min(max(top, origin.midY - height / 2), bottom - height)
-    case .bottom, .bottomEdge, .expandingToBottom:
+    case .anchoredLeading(let offset):
+      // The caller chose the edge explicitly: only keep the panel on screen.
+      x = min(max(source.bounds.minX, origin.minX + finite(offset)), source.bounds.maxX - width)
+      y = min(max(top, origin.midY - height / 2), bottom - height)
+    case .bottom, .bottomEdge, .expandingToBottom, .fullScreen:
       x = source.bounds.midX - width / 2
       y = bottom - height
     }
     let rect = CGRect(x: x, y: y, width: width, height: height)
     view.menuFrame = rect
     var clearance: CGFloat = 0
+    var topClearance: CGFloat = 0
     if layout.position.edgeInset != nil {
       clearance = max(0, rect.maxY - (source.bounds.maxY - source.safeAreaInsets.bottom))
+    }
+    if case .fullScreen = layout.position {
+      topClearance = max(0, source.bounds.minY + source.safeAreaInsets.top - rect.minY)
     }
     // The background reaches the window edge, but controls stay above the home
     // indicator. Content keeps its destination allocation throughout animation.
     let contentInsets = view.content as? OverlayContentSafeArea
     let extends = contentInsets?.overlayExtendsToEdges == true
-    contentInsets?.overlaySafeAreaInsetsDidChange(UIEdgeInsets(top: 0, left: 0, bottom: clearance, right: 0))
+    contentInsets?.overlaySafeAreaInsetsDidChange(UIEdgeInsets(top: topClearance, left: 0, bottom: clearance, right: 0))
     view.panel.contentSize = CGSize(width: rect.width, height: max(0, rect.height - (extends ? 0 : clearance)))
     var topRadius: CGFloat
     var bottomRadius: CGFloat
     var concentric: CGFloat = 0
+    var topConcentric: CGFloat = 0
     switch appearance.corners {
     case .fixed(let radius): topRadius = radius; bottomRadius = radius
+    case .concentric(let fallback):
+      topRadius = fallback; bottomRadius = fallback
+      if #available(iOS 26.0, *), let margin = layout.position.edgeInset,
+         placement != .aboveKeyboard,
+         abs(rect.minX - source.bounds.minX - max(0, finite(margin))) < 0.5,
+         abs(source.bounds.maxX - rect.maxX - max(0, finite(margin))) < 0.5 {
+        concentric = 1
+        if case .fullScreen = layout.position { topConcentric = 1 }
+      }
     case .bottomConcentric(let top, let fallback):
       topRadius = top; bottomRadius = fallback
       if #available(iOS 26.0, *), let margin = layout.position.edgeInset,
@@ -634,7 +672,8 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
       }
     }
     target = values(rect, radius: max(0, finite(topRadius)), alpha: 1,
-                    concentric: concentric, bottomRadius: max(0, finite(bottomRadius)))
+                    concentric: concentric, bottomRadius: max(0, finite(bottomRadius)), topConcentric: topConcentric,
+                    dim: appearance.dim == nil ? 0 : 1)
     if resolvedFrame != rect {
       resolvedFrame = rect
       layoutRevision += 1
@@ -661,6 +700,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
   let panel: OverlayPanel
   var menuFrame: CGRect = .zero
   var allowsKeyboardOverlap = true
+  let dim = UIView()
   private let backdrop = UIControl()
   private let close: () -> Void
 
@@ -676,12 +716,16 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     backdrop.isAccessibilityElement = true
     backdrop.accessibilityTraits = .button
     backdrop.addAction(UIAction { _ in close() }, for: .touchUpInside)
+    dim.isUserInteractionEnabled = false
+    dim.accessibilityElementsHidden = true
+    dim.alpha = 0
+    addSubview(dim)
     addSubview(backdrop)
     addSubview(panel)
     accessibilityElements = [content, backdrop]
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  override func layoutSubviews() { super.layoutSubviews(); backdrop.frame = bounds }
+  override func layoutSubviews() { super.layoutSubviews(); dim.frame = bounds; backdrop.frame = bounds }
   override func accessibilityPerformEscape() -> Bool { close(); return true }
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     guard bounds.contains(point), !isHidden, alpha > 0.01, isUserInteractionEnabled else { return nil }

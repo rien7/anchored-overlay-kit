@@ -116,6 +116,7 @@ func performExternalInteraction(
 OverlayLayout(width: Width, height: Height, position: Position = .anchored)
 OverlayLayout.bottomEdge(inset: CGFloat = 12, height: Height, maxWidth: CGFloat = 600)
 OverlayLayout.expandingToBottom(inset: CGFloat = 12, maxWidth: CGFloat = 600)
+OverlayLayout.fullScreen(inset: CGFloat = 12, maxWidth: CGFloat = .greatestFiniteMagnitude)
 ```
 
 | 参数 / 成员 | 默认值 | 含义 |
@@ -126,12 +127,16 @@ OverlayLayout.expandingToBottom(inset: CGFloat = 12, maxWidth: CGFloat = 600)
 | `Height.content(max:)` | Required cap | 先确定宽度再测量内容，限制总外层高度。 |
 | `Height.viewportFraction(CGFloat)` | Required fraction | 源窗口高度的比例，受可用空间约束。 |
 | `Position.anchored` | Default | 跟随触发按钮。 |
+| `Position.anchoredLeading(offset:)` | Required value | 跟随触发点并竖直居中；左缘相对触发点左缘偏移 offset（负值向外）。只夹在窗口内。 |
 | `Position.bottom(inset:)` | 16 | 从已解析的安全区或键盘底边界向上留白。 |
 | `Position.bottomEdge(inset:)` | 12 | 相对窗口底边定位。 |
 | `Position.expandingToBottom(inset:)` | 12 | 记录上一目标矩形顶部，向窗口底部填充；忽略 height。首次展示使用安全区顶部。 |
+| `Position.fullScreen(inset:)` | 12 | 四边等距铺满窗口（不受安全区限制）；忽略 height；内容收到上下安全区避让。 |
 | `bottomEdge(inset:height:maxWidth:)` | 12 / Required / 600 | 组合可用宽度与窗口左右、底部等间距。 |
 | `expandingToBottom(inset:maxWidth:)` | 12 / 600 | 组合可用宽度与向底部展开的位置策略。 |
+| `fullScreen(inset:maxWidth:)` | 12 / 无上限 | 组合可用宽度与全屏位置。 |
 | `OverlayTransition` | .spring in updates | `.spring` 或 `.immediate`。 |
+| `controller.spring` | .smooth | 几何弹簧 `OverlaySpringParameters(response:dampingFraction:)`；`.smooth` 为临界阻尼（0.3 行为），`.snappy` 为 0.23s / 0.8 略带回弹。 |
 
 layout 的三个字段均可修改。先确定宽度再测量高度；实现 `OverlayContentSizing` 或 Auto Layout fitting，不要从上次分配的 frame 推导期望高度。滚动视图应使用有界高度或能提供自然高度的包装视图。贴边布局允许背景延伸到 Home Indicator 下方；库会从普通内容区域中扣除剩余安全距离，不要重复扣除。
 
@@ -144,6 +149,7 @@ OverlayAppearance(cornerRadius: CGFloat = 24, background: Background = .glass(.r
 | --- | --- | --- |
 | `Corners.fixed(CGFloat)` | 24 via cornerRadius init | 统一圆角。 |
 | `Corners.bottomConcentric(top:fallback:)` | 24 / 24 | 固定顶部圆角；iOS 26+ 满足条件时由系统解析底部圆角，否则使用 fallback。 |
+| `Corners.concentric(fallback:)` | 24 | 与 bottomConcentric 相同，且在 `.fullScreen` 时顶部圆角也跟随屏幕。 |
 | `Background.glass(_:tint:fallback:)` | Required style / nil / .systemMaterial | 样式为 `.regular` 或 `.clear`。iOS 26+ 使用 UIGlassEffect，旧系统使用指定 UIBlurEffect.Style。 |
 | `Background.material(UIBlurEffect.Style)` | Required style | 系统模糊材质。 |
 | `Background.color(UIColor)` | Required color | UIColor 背景。 |
