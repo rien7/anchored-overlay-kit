@@ -1,0 +1,56 @@
+name: npm publish
+
+# Publishes @rien7/anchored-overlay-kit to npm with trusted publishing (OIDC, no NPM_TOKEN).
+# Release: bump package.json "version" on main, then push the bare tag X.Y.Z (no "v").
+# The trusted publisher on npmjs.com must name this file: npm-publish.yml
+# (repository rien7/anchored-overlay-kit, no environment).
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag matches package.json and is on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          if [[ "$RELEASE_TAG" != "$version" ]]; then
+            echo "::error::Tag $RELEASE_TAG does not match package.json version $version."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo '::error::Release tag must point to a commit already in origin/main.'
+            exit 1
+          fi
+      - name: Swift build (iOS Simulator)
+        run: xcodebuild build -scheme AnchoredOverlayKit -destination 'generic/platform=iOS Simulator' -quiet
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: npm >= 11.5.1 (trusted publishing)
+        run: npm install -g npm@latest && npm --version
+      - name: Pack
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: Publish
+        run: npm publish "$RUNNER_TEMP"/rien7-anchored-overlay-kit-"$RELEASE_TAG".tgz --access public --provenance
