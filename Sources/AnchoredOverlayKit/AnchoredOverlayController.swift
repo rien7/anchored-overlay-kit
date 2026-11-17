@@ -740,6 +740,9 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
 @MainActor private final class OverlayPanel: UIView {
   private let content: UIView
   private let contentContainer = UIView()
+  /// Clips the content to the panel's shape. The panel itself does not clip on iOS 26,
+  /// so the glass backdrop keeps its rim and soft outer shadow like other system glass.
+  private let clip = UIView()
   private let boundaryRenderer: OverlayBoundaryRenderer?
   private var closingRepresentation: UIView?
   var contentSize: CGSize = .zero {
@@ -755,11 +758,14 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     self.content = content
     boundaryRenderer = content is OverlayBoundaryHighlighting ? OverlayBoundaryRenderer() : nil
     super.init(frame: .zero)
-    clipsToBounds = true
+    if #available(iOS 26.0, *) { clipsToBounds = false } else { clipsToBounds = true }
     layer.cornerCurve = .continuous
+    clip.clipsToBounds = true
+    clip.layer.cornerCurve = .continuous
     accessibilityIdentifier = "anchored-overlay-panel"
     setBackground(background)
-    addSubview(contentContainer)
+    addSubview(clip)
+    clip.addSubview(contentContainer)
     contentContainer.layer.anchorPoint = .zero
     contentContainer.addSubview(content)
     if let boundaryRenderer { addSubview(boundaryRenderer) }
@@ -805,6 +811,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     appliedBounds = bounds
     if #available(iOS 26.0, *) {
       overlaySetNativeCorners(radii)
+      clip.overlaySetNativeCorners(radii)
       backdrop?.overlaySetNativeCorners(radii)
       for entry in fadingBackdrops { entry.view.overlaySetNativeCorners(radii) }
     } else {
@@ -818,7 +825,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
     closingRepresentation?.removeFromSuperview()
     closingRepresentation = representation
     representation.isUserInteractionEnabled = false
-    addSubview(representation)
+    clip.addSubview(representation)
     representation.frame = bounds
     representation.alpha = 0
     UIView.animate(withDuration: 0.12) {
@@ -830,6 +837,7 @@ public enum OverlayDestinationVisibility: Sendable { case unchanged, hideDuringT
   override func layoutSubviews() {
     super.layoutSubviews()
     backdrop?.frame = bounds
+    clip.frame = bounds
     closingRepresentation?.frame = bounds
     for entry in fadingBackdrops { entry.view.frame = bounds }
     setRadii(radii)
